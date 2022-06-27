@@ -201,14 +201,15 @@ def train_model(model, criterion, optimizer, scheduler, num_epochs=25, device='c
 
 new_model = train_model(model_fe, criterion, optimizer_ft, exp_lr_scheduler, num_epochs=25, device=device)
 #visualize_model(new_model, rows=4, cols=4, device=device)
-torch.save(new_model, "./output/classifier_final.pth")
+torch.save(new_model.state_dict(), "./output/classifier_final.pth")
 #plt.show()
 
 correct = 0
 total = 0
 # since we're not training, we don't need to calculate the gradients for our outputs
+test_data_loader = data_loaders["test"]
 with torch.no_grad():
-    for images, labels in data_loaders["test"]:
+    for images, labels in test_data_loader:
         images, labels = images.to(device), labels.to(device)
         # calculate outputs by running images through the network
         outputs = new_model(images)
@@ -217,4 +218,4 @@ with torch.no_grad():
         total += labels.size(0)
         correct += (predicted == labels).sum().item()
 
-print(f'Accuracy of the network on the {len(data_loaders)} test images: {100 * correct / total} %')
+print(f'Accuracy of the network on the {len(test_data_loader.dataset)} test images: {100 * correct / total} %')

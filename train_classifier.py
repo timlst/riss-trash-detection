@@ -1,16 +1,18 @@
 import copy
 import time
 
+import matplotlib.pyplot as plt
+import numpy as np
 import torch
-import torchvision
+import torchvision.models as models
 import torchvision.transforms as transforms
 from torch import nn, optim
 from torch.optim import lr_scheduler
 from torchvision.datasets import ImageFolder
-import torchvision.models as models
 
-import matplotlib.pyplot as plt
-import numpy as np
+from sklearn.metrics import confusion_matrix
+import seaborn as sn
+import pandas as pd
 
 data_transforms = {
     'train': transforms.Compose([
@@ -170,39 +172,9 @@ def train_model(model, criterion, optimizer, scheduler, num_epochs=25, device='c
     return model
 
 
-#def visualize_model(model, rows=3, cols=3, device="cpu"):
-#    was_training = model.training
-#    model.eval()
-#    current_row = current_col = 0
-#    fig, ax = plt.subplots(rows, cols, figsize=(cols * 2, rows * 2))
-#
-#    with torch.no_grad():
-#        for idx, (imgs, lbls) in enumerate(data_loaders['test']):
-#            imgs = imgs.to(device)
-#            lbls = lbls.to(device)
-#
-#            outputs = model(imgs)
-#            _, preds = torch.max(outputs, 1)
-#
-#            for jdx in range(imgs.size()[0]):
-#                imshow(imgs.data[jdx], ax=ax[current_row, current_col])
-#                ax[current_row, current_col].axis('off')
-#                ax[current_row, current_col].set_title(f'predicted: {class_names[preds[jdx]]} truth: {class_names[lbls[jdx]]}')
-#
-#                current_col += 1
-#                if current_col >= cols:
-#                    current_row += 1
-#                    current_col = 0
-#                if current_row >= rows:
-#                    model.train(mode=was_training)
-#                    return
-#        model.train(mode=was_training)
-
-
 new_model = train_model(model_fe, criterion, optimizer_ft, exp_lr_scheduler, num_epochs=25, device=device)
-#visualize_model(new_model, rows=4, cols=4, device=device)
-torch.save(new_model.state_dict(), "./output/classifier_final.pth")
-#plt.show()
+new_model.train()
+torch.save(new_model, "./output/classifier_final.pth")
 
 correct = 0
 total = 0
@@ -219,3 +191,25 @@ with torch.no_grad():
         correct += (predicted == labels).sum().item()
 
 print(f'Accuracy of the network on the {len(test_data_loader.dataset)} test images: {100 * correct / total} %')
+
+y_pred = []
+y_true = []
+
+# iterate over test data
+for inputs, labels in test_data_loader:
+    output = new_model(inputs)  # Feed Network
+
+    output = (torch.max(torch.exp(output), 1)[1]).data.cpu().numpy()
+    y_pred.extend(output)  # Save Prediction
+
+    labels = labels.data.cpu().numpy()
+    y_true.extend(labels)  # Save Truth
+
+# constant for image
+# Build confusion matrix
+cf_matrix = confusion_matrix(y_true, y_pred)
+df_cm = pd.DataFrame(cf_matrix / np.sum(cf_matrix) * 10, index=[i for i in class_names],
+                     columns=[i for i in class_names])
+plt.figure(figsize=(12, 7))
+sn.heatmap(df_cm, annot=True)
+plt.savefig('heatmap.png')

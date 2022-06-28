@@ -5,7 +5,6 @@ import sys
 import cv2
 import torch
 from PIL import Image
-from detectron2.config import get_cfg
 
 import warnings
 
@@ -53,8 +52,6 @@ MINIMUM_CONFIDENCE = 0.5
 classes = ("Empty", "Full", "Garbage Bag")
 
 args = parser.parse_args()
-
-cfg = get_cfg()
 
 model = torch.load(args.model_path)
 model.eval()

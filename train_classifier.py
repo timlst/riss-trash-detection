@@ -10,10 +10,6 @@ from torch import nn, optim
 from torch.optim import lr_scheduler
 from torchvision.datasets import ImageFolder
 
-from sklearn.metrics import confusion_matrix
-import seaborn as sn
-import pandas as pd
-
 data_transforms = {
     'train': transforms.Compose([
         transforms.Resize(224),
@@ -39,11 +35,18 @@ data_transforms = {
 batch_size = 4
 
 datasets = {
-    "train": ImageFolder("./Waste_Bin_Multi-Class_Detection_Dataset/cloudy/train/", transform=data_transforms["train"]),
-    "val": ImageFolder("./Waste_Bin_Multi-Class_Detection_Dataset/cloudy/validation/",
+    "train": ImageFolder("./Waste_Bin_Multi-Class_Detection_Dataset/combined/train/", transform=data_transforms["train"]),
+    "val": ImageFolder("./Waste_Bin_Multi-Class_Detection_Dataset/combined/validation/",
                        transform=data_transforms["val"]),
-    "test": ImageFolder("./Waste_Bin_Multi-Class_Detection_Dataset/cloudy/test/", transform=data_transforms["test"]),
+    "test": ImageFolder("./Waste_Bin_Multi-Class_Detection_Dataset/combined/test/", transform=data_transforms["test"]),
 }
+
+for lbl, folder in datasets.items():
+    total_in_folder = len(folder)
+    print(f"{lbl}: {total_in_folder} Images")
+    for class_name, index in folder.class_to_idx.items():
+        class_in_folder = folder.targets.count(index)
+        print(f"\t{class_name}: {class_in_folder} | {class_in_folder/total_in_folder:.2%}")
 
 data_loaders = {phase: torch.utils.data.DataLoader(folder, batch_size=16, shuffle=True, num_workers=8)
                 for phase, folder in datasets.items()}
@@ -51,8 +54,6 @@ data_loaders = {phase: torch.utils.data.DataLoader(folder, batch_size=16, shuffl
 dataset_sizes = {phase: len(folder) for phase, folder in datasets.items()}
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-print(f"{device=}")
-# device="cpu"
 
 class_names = datasets['train'].classes
 
@@ -76,7 +77,7 @@ def imshow(inp, title=None, ax=None, figsize=(5, 5)):
 # Setting up the model
 # load in pretrained and reset final fully connected
 
-model_fe = models.resnet34(pretrained=True)
+model_fe = models.resnet101(pretrained=True)
 
 num_features = model_fe.fc.in_features
 # adjust the final layer for the number of output classes
@@ -172,9 +173,9 @@ def train_model(model, criterion, optimizer, scheduler, num_epochs=25, device='c
     return model
 
 
-new_model = train_model(model_fe, criterion, optimizer_ft, exp_lr_scheduler, num_epochs=25, device=device)
+new_model = train_model(model_fe, criterion, optimizer_ft, exp_lr_scheduler, num_epochs=10, device=device)
 new_model.train()
-torch.save(new_model, "./output/classifier_final.pth")
+torch.save(new_model, "output/classifier_final.pth")
 
 correct = 0
 total = 0
@@ -191,25 +192,3 @@ with torch.no_grad():
         correct += (predicted == labels).sum().item()
 
 print(f'Accuracy of the network on the {len(test_data_loader.dataset)} test images: {100 * correct / total} %')
-
-y_pred = []
-y_true = []
-
-# iterate over test data
-for inputs, labels in test_data_loader:
-    output = new_model(inputs)  # Feed Network
-
-    output = (torch.max(torch.exp(output), 1)[1]).data.cpu().numpy()
-    y_pred.extend(output)  # Save Prediction
-
-    labels = labels.data.cpu().numpy()
-    y_true.extend(labels)  # Save Truth
-
-# constant for image
-# Build confusion matrix
-cf_matrix = confusion_matrix(y_true, y_pred)
-df_cm = pd.DataFrame(cf_matrix / np.sum(cf_matrix) * 10, index=[i for i in class_names],
-                     columns=[i for i in class_names])
-plt.figure(figsize=(12, 7))
-sn.heatmap(df_cm, annot=True)
-plt.savefig('heatmap.png')

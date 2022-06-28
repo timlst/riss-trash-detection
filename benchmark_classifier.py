@@ -1,4 +1,5 @@
 import argparse
+import os
 
 import numpy as np
 import pandas as pd
@@ -26,9 +27,13 @@ parser.add_argument('-m', '--model_path',
 parser.add_argument('-o', '--output',
                     required=False,
                     help='Filepath for results',
-                    default='./heatmap.png')
+                    default='./benchmark/')
 
 args = parser.parse_args()
+
+prev_dir = os.getcwd()
+os.makedirs(args.output, exist_ok=True)
+os.chdir(args.output)
 
 # Set up loading of images
 transform = transforms.Compose([
@@ -81,19 +86,23 @@ sns.heatmap(cf_matrix_normalized, annot=True, fmt='.2f',
 plt.title('Confusion matrix')
 plt.ylabel('Actual')
 plt.xlabel('Predicted')
-plt.savefig(args.output)
-print(f"Confusion matrix saved to {args.output}")
-print()
+plt.savefig('confusion_matrix.png')
+print("Confusion matrix generated.")
 
 #####################
 # BALANCED ACCURACY #
 #####################
 balanced_accuracy = balanced_accuracy_score(y_true, y_pred)
 print(f"Balanced accuracy score: {balanced_accuracy}")
+print()
 
 precisions, recalls, fbeta_scores, supports = precision_recall_fscore_support(y_true, y_pred, labels=[0, 1, 2])
 print(f"{'Label': <12}|{'Precision': <10}|{'Recall': <7}|{'Fbeta': <7}|{'Support': <7}")
 print('-'*47)
 for label, precision, recall, fbeta, support in zip(class_names, precisions, recalls, fbeta_scores, supports):
     print(f"{label: >12}|{precision: >10.2%}|{recall: >7.2%}|{fbeta: >7.2%}|{support: >7}")
+
+
+# go back to original directory
+os.chdir(prev_dir)
 

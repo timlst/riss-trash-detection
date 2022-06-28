@@ -74,7 +74,6 @@ with open(args.annotations) as coco_file:
                         # we want to check for intersection with the cut out box, so we have to transform the
                         # coordinates
                         category = "Garbage Bag"
-                        print("was can, but found garbage bag")
                         break
 
             # extract box manually, syntax swapped because of numpy things

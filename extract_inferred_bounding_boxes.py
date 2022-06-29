@@ -4,6 +4,7 @@ import sys
 
 import cv2
 import numpy as np
+from PIL import Image, ImageDraw
 from detectron2.checkpoint import DetectionCheckpointer
 from detectron2.config import get_cfg
 from detectron2.engine import DefaultPredictor
@@ -62,9 +63,9 @@ for input_file in args.input:
     filename = path.stem
     extension = path.suffix
 
-    original_image = cv2.imread(input_file)
+    original_image = Image.open(input_file)
 
-    outputs = predictor(original_image)
+    outputs = predictor(np.asarray(original_image))
     instances = outputs["instances"].to("cpu")
 
     if len(instances) == 0:
@@ -75,12 +76,12 @@ for input_file in args.input:
     for index, box in enumerate(instances.pred_boxes):
         # copy to make sure we do not draw on original image
         working_image = original_image.copy()
+        draw = ImageDraw.Draw(working_image)
         x1, y1, x2, y2 = box.tolist()
 
         if args.bounding_box:
             color = tuple(np.random.choice(range(256), size=3))
-            # cv2 does not like my types apparently, so we reaaaally make sure that they are right
-            working_image = cv2.rectangle(working_image, (int(x1), int(y1)), (int(x2), int(y2)), (int(color[0]), int(color[1]), int(color[2])), 1)
+            draw.rectangle((x1, y1, x2, y2), outline=color, width=2)
 
         box_width = abs(x1 - x2)
         box_height = abs(y1 - y2)
@@ -92,14 +93,14 @@ for input_file in args.input:
         # make sure bounding box doesn't extend beyond actual image and convert to int
         x1 = int(max(0, x1 - dx))
         y1 = int(max(0, y1 - dy))
-        x2 = int(min(working_image.shape[1], x2 + dx))
-        y2 = int(min(working_image.shape[0], y2 + dy))
+        x2 = int(min(working_image.size[0], x2 + dx))
+        y2 = int(min(working_image.size[1], y2 + dy))
 
         # extract box manually, syntax swapped because of numpy things
-        cutout = working_image[y1:y2, x1:x2]
+        cutout = working_image.crop((x1, y1, x2, y2))
 
         outfile = args.output_mask.format(filename=filename, extension=extension[1:], index=index)
-        cv2.imwrite(outfile, cutout)
+        cutout.save(outfile)
 
     print(f"Extracted {len(instances)} entities.")
     print()

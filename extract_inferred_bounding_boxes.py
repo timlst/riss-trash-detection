@@ -2,7 +2,6 @@ import argparse
 import pathlib
 import sys
 
-import cv2
 import numpy as np
 from PIL import Image, ImageDraw
 from detectron2.checkpoint import DetectionCheckpointer
@@ -24,7 +23,8 @@ parser.add_argument('-i', '--input',
 parser.add_argument('-o', '--output_mask',
                     default='{filename}_out{index}.{extension}',
                     required=False,
-                    help='format string for output file, supports keywords "filename", "extension" and "index". default: {filename}_out{index}.{extension}')
+                    help='format string for output file, supports keywords "filename", "extension" and "index". '
+                         'default: {filename}_out{index}.{extension}') 
 
 parser.add_argument('-b', '--bounding_box',
                     action='store_true',
@@ -32,19 +32,22 @@ parser.add_argument('-b', '--bounding_box',
                     help='Include the original bounding box before resizing')
 
 parser.add_argument('-m', '--model_path',
-                    type=argparse.FileType('r'),
                     required=True,
                     help='filepath of the model to use.')
 
 args = parser.parse_args()
 
+MIN_WIDTH = 50
+MIN_HEIGHT = 50
+
 cfg = get_cfg()
 model = build_model(cfg)
 
 # Get Faster R-CNN model config we started out learning from
-cfg.merge_from_file(model_zoo.get_config_file("COCO-Detection/faster_rcnn_R_50_FPN_3x.yaml"))
+cfg.merge_from_file(model_zoo.get_config_file("COCO-Detection/faster_rcnn_R_101_FPN_3x.yaml"))
+# cfg.merge_from_file(model_zoo.get_config_file("COCO-Detection/faster_rcnn_R_50_FPN_3x.yaml"))
 
-cfg.MODEL.WEIGHTS = args.model_path.name
+cfg.MODEL.WEIGHTS = args.model_path
 cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.9  # set a custom testing threshold
 cfg.MODEL.ROI_HEADS.NUM_CLASSES = 1
 
@@ -53,6 +56,7 @@ print("Model loaded.")
 
 predictor = DefaultPredictor(cfg)
 
+# The scaling of the detected bounding box to the final cutout
 HORIZONTAL_SCALE = 1.5
 VERTICAL_SCALE = 1.2
 
@@ -73,6 +77,7 @@ for input_file in args.input:
         print()
         continue
 
+    extractions = 0
     for index, box in enumerate(instances.pred_boxes):
         # copy to make sure we do not draw on original image
         working_image = original_image.copy()
@@ -96,13 +101,18 @@ for input_file in args.input:
         x2 = int(min(working_image.size[0], x2 + dx))
         y2 = int(min(working_image.size[1], y2 + dy))
 
+        if box_width < MIN_WIDTH or box_height < MIN_HEIGHT:
+            print("Skipping box that is too small.")
+            continue
+
         # extract box manually, syntax swapped because of numpy things
         cutout = working_image.crop((x1, y1, x2, y2))
 
         outfile = args.output_mask.format(filename=filename, extension=extension[1:], index=index)
         cutout.save(outfile)
+        extractions += 1
 
-    print(f"Extracted {len(instances)} entities.")
+    print(f"Extracted {extractions} entities.")
     print()
 
 sys.exit(0)

@@ -33,7 +33,6 @@ args = parser.parse_args()
 
 prev_dir = os.getcwd()
 os.makedirs(args.output, exist_ok=True)
-os.chdir(args.output)
 
 # Set up loading of images
 transform = transforms.Compose([
@@ -52,7 +51,7 @@ class_names = ("Empty", "Full", "Garbage Bag")
 model = torch.load(args.model_path)
 model.eval()
 
-
+CONFIDENCE = 0.5
 ########################
 # TEST SET PREDICTIONS #
 ########################
@@ -65,6 +64,10 @@ for inputs, labels in dataset_loader:
     inputs, labels = inputs.to(device), labels.to(device)
     output = model(inputs)
 
+    probabilities = torch.nn.functional.softmax(output, dim=1)
+    print(probabilities)
+    predictions = torch.max(probabilities, 1)
+    print(predictions)
     # Save Prediction
     output = (torch.max(torch.exp(output), 1)[1]).data.cpu().numpy()
     y_pred.extend(output)
@@ -73,7 +76,8 @@ for inputs, labels in dataset_loader:
     y_true.extend(labels)  # Save Truth
 
 ####################
-# CONFUSION MATRIX #
+# CONFUSION MATRIX
+#
 ####################
 
 # constant for image
@@ -86,7 +90,11 @@ sns.heatmap(cf_matrix_normalized, annot=True, fmt='.2f',
 plt.title('Confusion matrix')
 plt.ylabel('Actual')
 plt.xlabel('Predicted')
+
+# save in output dir
+os.chdir(args.output)
 plt.savefig('confusion_matrix.png')
+os.chdir(prev_dir)
 print("Confusion matrix generated.")
 
 #####################

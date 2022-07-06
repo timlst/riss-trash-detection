@@ -18,7 +18,7 @@ logging.basicConfig(level=logging.CRITICAL)
 logger = logging.getLogger("extraction")
 
 
-def _build_model(weights, model_zoo_config_file="COCO-Detection/faster_rcnn_R_101_FPN_3x.yaml"):
+def _build_detection_model(weights, model_zoo_config_file="COCO-Detection/faster_rcnn_R_101_FPN_3x.yaml"):
     """Builds a model from file path to previous weights and path of model_zoo config file.
 
     :param weights: file path to weights file (.pth)
@@ -144,7 +144,7 @@ if __name__ == "__main__":
         logger.setLevel(logging.WARNING)
 
     generated_files = []
-    model = _build_model(args.model_path)
+    model = _build_detection_model(args.model_path)
 
     for input_file in tqdm(args.input, disable=(not args.progressbar), leave=None):
         logger.debug(f"Evaluating {input_file}")

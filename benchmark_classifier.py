@@ -1,11 +1,13 @@
 import argparse
 import os
+import sys
 
 import numpy as np
 import pandas as pd
 import sklearn.metrics
 import torch
 import seaborn as sns
+import torchvision
 from PIL import Image
 from matplotlib import pyplot as plt
 from sklearn.metrics import confusion_matrix, precision_recall_fscore_support, balanced_accuracy_score
@@ -23,6 +25,12 @@ parser.add_argument('-i', '--input',
 parser.add_argument('-m', '--model_path',
                     required=True,
                     help='filepath of the model to use.')
+
+parser.add_argument('-s', '--show-failures',
+                    required=False,
+                    action='store_true',
+                    default=False,
+                    help='Show images where the classifiers prediction is false')
 
 parser.add_argument('-o', '--output',
                     required=False,
@@ -48,6 +56,14 @@ dataset_loader = torch.utils.data.DataLoader(folder, batch_size=16, shuffle=True
 
 class_names = ("Empty", "Full", "Garbage Bag")
 
+def imshow(img, title=None):
+    img = img / 2 + 0.5     # unnormalize
+    npimg = img.numpy()
+    plt.imshow(np.transpose(npimg, (1, 2, 0)))
+    if title:
+        plt.title(title)
+    plt.show()
+
 model = torch.load(args.model_path)
 model.eval()
 
@@ -55,19 +71,22 @@ CONFIDENCE = 0.5
 ########################
 # TEST SET PREDICTIONS #
 ########################
+y_inputs = []
 y_pred = []
 y_true = []
+img_pred_truth = []
 
 # iterate over test data
 for inputs, labels in dataset_loader:
     # Run Inference on GPU if possible
+    y_inputs.extend(inputs)
     inputs, labels = inputs.to(device), labels.to(device)
     output = model(inputs)
 
     probabilities = torch.nn.functional.softmax(output, dim=1)
-    print(probabilities)
+    #print(probabilities)
     predictions = torch.max(probabilities, 1)
-    print(predictions)
+    #print(predictions)
     # Save Prediction
     output = (torch.max(torch.exp(output), 1)[1]).data.cpu().numpy()
     y_pred.extend(output)
@@ -75,9 +94,23 @@ for inputs, labels in dataset_loader:
     labels = labels.data.cpu().numpy()
     y_true.extend(labels)  # Save Truth
 
+
+########################
+# SHOW FALSE PREDICTIONS
+########################
+if args.show_failures:
+    mismatches = []
+    for idx, (output, truth) in enumerate(zip(y_pred, y_true)):
+        if output != truth:
+            mismatches.append((y_inputs[idx], output, truth))
+
+    print(len(mismatches))
+    imshow(
+        torchvision.utils.make_grid([m[0] for m in mismatches]),
+        title=[f"T:{class_names[truth]}|P:{class_names[pred]}" for _, truth, pred in mismatches]
+    )
 ####################
 # CONFUSION MATRIX
-#
 ####################
 
 # constant for image

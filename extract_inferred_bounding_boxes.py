@@ -1,4 +1,5 @@
 import argparse
+import logging
 import pathlib
 import sys
 
@@ -12,6 +13,10 @@ from detectron2.modeling import build_model
 
 import warnings
 warnings.filterwarnings("ignore")
+
+# we dont want detectron2 loading logs
+logging.basicConfig(level=logging.CRITICAL)
+logger = logging.getLogger("extraction")
 
 parser = argparse.ArgumentParser(description='Apply trained model to image and cut out any matches if found.')
 
@@ -35,7 +40,26 @@ parser.add_argument('-m', '--model_path',
                     required=True,
                     help='filepath of the model to use.')
 
+parser.add_argument('-v', '--verbose',
+                    action='count',
+                    default=0,
+                    help='Prints messages: -v for warnings like "bbox too small", -vv for ' +
+                         'INFO logging which includes number of extracted entities, -vvv for everything else')
+
+parser.add_argument('-g', '--generated',
+                    action='store_true',
+                    default=False,
+                    help="Print list of generated files afterwards")
+
 args = parser.parse_args()
+
+if args.verbose >= 3:
+    logger.setLevel(logging.DEBUG)
+elif args.verbose >= 2:
+    logger.setLevel(logging.INFO)
+elif args.verbose >= 1:
+    logger.setLevel(logging.WARNING)
+
 
 MIN_WIDTH = 50
 MIN_HEIGHT = 50
@@ -52,7 +76,7 @@ cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.9  # set a custom testing threshold
 cfg.MODEL.ROI_HEADS.NUM_CLASSES = 1
 
 DetectionCheckpointer(model).load(cfg.MODEL.WEIGHTS)
-print("Model loaded.")
+logger.debug("Model loaded.")
 
 predictor = DefaultPredictor(cfg)
 
@@ -60,9 +84,10 @@ predictor = DefaultPredictor(cfg)
 HORIZONTAL_SCALE = 1.5
 VERTICAL_SCALE = 1.2
 
-for input_file in args.input:
+generated_files = []
 
-    print(f"Evaluating {input_file}")
+for input_file in args.input:
+    logger.debug(f"Evaluating {input_file}")
     path = pathlib.Path(input_file)
     filename = path.stem
     extension = path.suffix
@@ -73,8 +98,7 @@ for input_file in args.input:
     instances = outputs["instances"].to("cpu")
 
     if len(instances) == 0:
-        print("No extractable entities found.")
-        print()
+        logger.info(f"{input_file} - No extractable entities found.")
         continue
 
     extractions = 0
@@ -102,7 +126,7 @@ for input_file in args.input:
         y2 = int(min(working_image.size[1], y2 + dy))
 
         if box_width < MIN_WIDTH or box_height < MIN_HEIGHT:
-            print("Skipping box that is too small.")
+            logger.warning(f"{input_file} - Skipping box that is too small.")
             continue
 
         # extract box manually, syntax swapped because of numpy things
@@ -110,9 +134,13 @@ for input_file in args.input:
 
         outfile = args.output_mask.format(filename=filename, extension=extension[1:], index=index)
         cutout.save(outfile)
+        generated_files.append(outfile)
         extractions += 1
 
-    print(f"Extracted {extractions} entities.")
-    print()
+    logger.info(f"{input_file} - Extracted {extractions} entities.")
+
+if args.generated:
+    for f in generated_files:
+        print(f)
 
 sys.exit(0)

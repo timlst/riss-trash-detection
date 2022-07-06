@@ -12,6 +12,9 @@ from detectron2.model_zoo import model_zoo
 from detectron2.modeling import build_model
 
 import warnings
+
+from tqdm import tqdm
+
 warnings.filterwarnings("ignore")
 
 # we dont want detectron2 loading logs
@@ -29,7 +32,7 @@ parser.add_argument('-o', '--output_mask',
                     default='{filename}_out{index}.{extension}',
                     required=False,
                     help='format string for output file, supports keywords "filename", "extension" and "index". '
-                         'default: {filename}_out{index}.{extension}') 
+                         'default: {filename}_out{index}.{extension}')
 
 parser.add_argument('-b', '--bounding_box',
                     action='store_true',
@@ -51,6 +54,11 @@ parser.add_argument('-g', '--generated',
                     default=False,
                     help="Print list of generated files afterwards")
 
+parser.add_argument('-p', '--progressbar',
+                    action='store_true',
+                    default=False,
+                    help="Show progressbar during inference")
+
 args = parser.parse_args()
 
 if args.verbose >= 3:
@@ -60,7 +68,6 @@ elif args.verbose >= 2:
 elif args.verbose >= 1:
     logger.setLevel(logging.WARNING)
 
-
 MIN_WIDTH = 50
 MIN_HEIGHT = 50
 
@@ -69,7 +76,6 @@ model = build_model(cfg)
 
 # Get Faster R-CNN model config we started out learning from
 cfg.merge_from_file(model_zoo.get_config_file("COCO-Detection/faster_rcnn_R_101_FPN_3x.yaml"))
-# cfg.merge_from_file(model_zoo.get_config_file("COCO-Detection/faster_rcnn_R_50_FPN_3x.yaml"))
 
 cfg.MODEL.WEIGHTS = args.model_path
 cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.9  # set a custom testing threshold
@@ -86,7 +92,7 @@ VERTICAL_SCALE = 1.2
 
 generated_files = []
 
-for input_file in args.input:
+for input_file in tqdm(args.input, disable=(not args.progressbar), leave=None):
     logger.debug(f"Evaluating {input_file}")
     path = pathlib.Path(input_file)
     filename = path.stem

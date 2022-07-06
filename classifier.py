@@ -67,14 +67,14 @@ def _extract_prediction(class_confidence_distribution):
     return likeliest_class, highest_confidence
 
 
-def _classify(classifier, image_tensor, class_names, minimal_confidence=0.5):
+def _classify(classifier, image_tensor, class_names, minimal_confidence=0.0):
     """
     Applies a classification model to an image tensor as input and
     returns a tuple of name of predicted class and the corresponding confidence.
     :param classifier: classification model to apply
     :param image_tensor: tensor of input image
     :param minimal_confidence: minimal required confidence for a prediction, otherwise class id will be None
-    :return: tuple of class id and confidence, class id may be None if the confidence is below minimal_confidence
+    :return: tuple of class name and confidence, class id may be "Ambiguous" if the confidence is below minimal_confidence
     """
 
     predicted_class_id, confidence_ = _extract_prediction(_predict_probabilities(classifier, image_tensor))
@@ -82,9 +82,9 @@ def _classify(classifier, image_tensor, class_names, minimal_confidence=0.5):
     confidence_ = confidence_.data[0]
 
     if confidence_ < minimal_confidence:
-        return None, confidence
+        return None, confidence_
 
-    return class_names[predicted_class_id], confidence
+    return class_names[predicted_class_id], confidence_
 
 
 if __name__ == "__main__":

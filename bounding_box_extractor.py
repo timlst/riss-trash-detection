@@ -18,22 +18,21 @@ logging.basicConfig(level=logging.CRITICAL)
 logger = logging.getLogger("extraction")
 
 
-def _build_detection_model(weights, model_zoo_config_file="COCO-Detection/faster_rcnn_R_101_FPN_3x.yaml"):
-    """Builds a model from file path to previous weights and path of model_zoo config file.
+def _build_detection_model(model_path, model_zoo_config_file="COCO-Detection/faster_rcnn_R_101_FPN_3x.yaml"):
+    """Builds a dtection model from file path to previous weights and path of model_zoo config file.
 
-    :param weights: file path to weights file (.pth)
+    :param model_path: file path to weights file (.pth)
     :param model_zoo_config_file: path in model_zoo, will be ignored if None
     :return: a model wrapped by DefaultPredictor
     """
     cfg = get_cfg()
-    m = build_model(cfg)
 
     if model_zoo_config_file:
         # Get Faster R-CNN model config we started out learning from
         cfg.merge_from_file(model_zoo.get_config_file(model_zoo_config_file))
 
     cfg.MODEL.ROI_HEADS.NUM_CLASSES = 1
-    cfg.MODEL.WEIGHTS = weights
+    cfg.MODEL.WEIGHTS = model_path
 
     #DetectionCheckpointer(model).load(cfg.MODEL.WEIGHTS)
     predictor = DefaultPredictor(cfg)
@@ -43,7 +42,7 @@ def _build_detection_model(weights, model_zoo_config_file="COCO-Detection/faster
     return predictor
 
 
-def _extract_from_image(predictor, image, horizontal_scale=1.5, vertical_scale=1.2, min_width=0, min_height=0):
+def _extract_from_image(predictor, image, horizontal_scale=1.5, vertical_scale=1.2, min_width=0, min_height=0, include_bounding_box=False):
     """
     Cuts out all bounding boxes predicted by a predictor from a given image. The box will be scaled equally in all
     directions to include the surroundings.
@@ -54,6 +53,7 @@ def _extract_from_image(predictor, image, horizontal_scale=1.5, vertical_scale=1
     :param vertical_scale: how much the cutout is scaled vertically compared to bbox
     :param min_height: the minimum height a bbox has to have to be cut out
     :param min_width: the minimum width a bbox has to have to be cut out
+    :param include_bounding_box: whether to include the original bounding box in the cutout
     :return: List of images, which are cutout from image. May be empty.
     """
     outputs = predictor(np.asarray(image))
@@ -67,7 +67,7 @@ def _extract_from_image(predictor, image, horizontal_scale=1.5, vertical_scale=1
         draw = ImageDraw.Draw(working_image)
         x1, y1, x2, y2 = bbox.tolist()
 
-        if args.bounding_box:
+        if include_bounding_box:
             color = tuple(np.random.choice(range(256), size=3))
             draw.rectangle((x1, y1, x2, y2), outline=color, width=2)
 
@@ -101,7 +101,7 @@ if __name__ == "__main__":
     parser.add_argument('-i', '--input',
                         required=True,
                         nargs='*',
-                        help='filepath of the image to apply the model to.')
+                        help='filepath of the images to apply the model to.')
 
     parser.add_argument('-o', '--output_mask',
                         default='{filename}_out{index}.{extension}',
@@ -117,22 +117,6 @@ if __name__ == "__main__":
     parser.add_argument('-m', '--model_path',
                         required=True,
                         help='filepath of the model to use.')
-
-    parser.add_argument('-v', '--verbose',
-                        action='count',
-                        default=0,
-                        help='Prints messages: -v for warnings like "bbox too small", -vv for ' +
-                             'INFO logging which includes number of extracted entities, -vvv for everything else')
-
-    parser.add_argument('-g', '--generated',
-                        action='store_true',
-                        default=False,
-                        help="Print list of generated files afterwards")
-
-    parser.add_argument('-p', '--progressbar',
-                        action='store_true',
-                        default=False,
-                        help="Show progressbar during inference")
 
     args = parser.parse_args()
 
@@ -154,7 +138,7 @@ if __name__ == "__main__":
 
         im = Image.open(input_file)
 
-        cutouts = _extract_from_image(model, im)
+        cutouts = _extract_from_image(model, im, include_bounding_box=args.bounding_box)
 
         if not cutouts:
             logger.info(f"{input_file} - No extractable entities found.")

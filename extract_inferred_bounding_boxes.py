@@ -20,12 +20,13 @@ logger = logging.getLogger("extraction")
 
 def _build_model(weights, model_zoo_config_file="COCO-Detection/faster_rcnn_R_101_FPN_3x.yaml"):
     """Builds a model from file path to previous weights and path of model_zoo config file.
+
     :param weights: file path to weights file (.pth)
     :param model_zoo_config_file: path in model_zoo, will be ignored if None
     :return: a model wrapped by DefaultPredictor
     """
     cfg = get_cfg()
-    model = build_model(cfg)
+    m = build_model(cfg)
 
     if model_zoo_config_file:
         # Get Faster R-CNN model config we started out learning from
@@ -34,7 +35,7 @@ def _build_model(weights, model_zoo_config_file="COCO-Detection/faster_rcnn_R_10
     cfg.MODEL.ROI_HEADS.NUM_CLASSES = 1
     cfg.MODEL.WEIGHTS = weights
 
-    DetectionCheckpointer(model).load(cfg.MODEL.WEIGHTS)
+    #DetectionCheckpointer(model).load(cfg.MODEL.WEIGHTS)
     predictor = DefaultPredictor(cfg)
 
     logger.debug("Model loaded.")
@@ -44,7 +45,9 @@ def _build_model(weights, model_zoo_config_file="COCO-Detection/faster_rcnn_R_10
 
 def _extract_from_image(predictor, image, horizontal_scale=1.5, vertical_scale=1.2, min_width=0, min_height=0):
     """
-    Cuts out all bounding boxes predicted by a predictor from a given image. The box will be scaled equally in all directions to include the surroundings.
+    Cuts out all bounding boxes predicted by a predictor from a given image. The box will be scaled equally in all
+    directions to include the surroundings.
+
     :param predictor: the predictor used to detect bounding boxes
     :param image: the source image
     :param horizontal_scale: how much the cutout is scaled horizontally compared to bbox
@@ -85,10 +88,8 @@ def _extract_from_image(predictor, image, horizontal_scale=1.5, vertical_scale=1
             logger.warning(f"{input_file} - Skipping box that is too small.")
             continue
 
-        # extract box manually, syntax swapped because of numpy things
-        cutout = working_image.crop((x1, y1, x2, y2))
-
-        extracted_bounding_boxes.append(cutout)
+        crop = working_image.crop((x1, y1, x2, y2))
+        extracted_bounding_boxes.append(crop)
 
     return extracted_bounding_boxes
 

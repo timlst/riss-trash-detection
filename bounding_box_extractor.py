@@ -1,6 +1,7 @@
 import argparse
 import logging
 import pathlib
+import warnings
 
 import numpy as np
 from PIL import Image, ImageDraw
@@ -11,7 +12,7 @@ from detectron2.model_zoo import model_zoo
 from tqdm import tqdm
 
 # we dont want detectron2 loading logs
-logging.basicConfig(level=logging.CRITICAL)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("extraction")
 
 
@@ -31,7 +32,7 @@ def _build_detection_model(model_path, model_zoo_config_file="COCO-Detection/fas
     cfg.MODEL.ROI_HEADS.NUM_CLASSES = 1
     cfg.MODEL.WEIGHTS = model_path
 
-    #DetectionCheckpointer(model).load(cfg.MODEL.WEIGHTS)
+    # DetectionCheckpointer(model).load(cfg.MODEL.WEIGHTS)
     predictor = DefaultPredictor(cfg)
 
     logger.debug("Model loaded.")
@@ -39,19 +40,19 @@ def _build_detection_model(model_path, model_zoo_config_file="COCO-Detection/fas
     return predictor
 
 
-def _extract_from_image(predictor, image, horizontal_scale=1.5, vertical_scale=1.2, min_width=0, min_height=0, include_bounding_box=False):
+def _get_bounding_boxes(predictor, image, horizontal_scale=1.5, vertical_scale=1.2, min_width=0, min_height=0,
+                        include_original=False):
     """
-    Cuts out all bounding boxes predicted by a predictor from a given image. The box will be scaled equally in all
-    directions to include the surroundings.
-
+    Gives a list of all bounding boxes predicted by a predictor from a given image.
+    The boxes will be scaled equally in all directions to include the surroundings.
     :param predictor: the predictor used to detect bounding boxes
     :param image: the source image
     :param horizontal_scale: how much the cutout is scaled horizontally compared to bbox
     :param vertical_scale: how much the cutout is scaled vertically compared to bbox
     :param min_height: the minimum height a bbox has to have to be cut out
     :param min_width: the minimum width a bbox has to have to be cut out
-    :param include_bounding_box: whether to include the original bounding box in the cutout
-    :return: List of images, which are cutout from image. May be empty.
+    :param include_original: return tuples (scaled_bbox, original_bbox) instead
+    :return: List of bounding boxes in image. May be empty.
     """
     outputs = predictor(np.asarray(image))
     instances = outputs["instances"].to("cpu")
@@ -60,13 +61,7 @@ def _extract_from_image(predictor, image, horizontal_scale=1.5, vertical_scale=1
 
     for index, bbox in enumerate(instances.pred_boxes):
         # copy to make sure we do not draw on original image
-        working_image = image.copy()
-        draw = ImageDraw.Draw(working_image)
         x1, y1, x2, y2 = bbox.tolist()
-
-        if include_bounding_box:
-            color = tuple(np.random.choice(range(256), size=3))
-            draw.rectangle((x1, y1, x2, y2), outline=color, width=2)
 
         box_width = abs(x1 - x2)
         box_height = abs(y1 - y2)
@@ -78,20 +73,76 @@ def _extract_from_image(predictor, image, horizontal_scale=1.5, vertical_scale=1
         # make sure bounding box doesn't extend beyond actual image and convert to int
         x1 = int(max(0, x1 - dx))
         y1 = int(max(0, y1 - dy))
-        x2 = int(min(working_image.size[0], x2 + dx))
-        y2 = int(min(working_image.size[1], y2 + dy))
+        x2 = int(min(image.size[0], x2 + dx))
+        y2 = int(min(image.size[1], y2 + dy))
 
         if box_width < min_width or box_height < min_height:
             logger.warning(f"{input_file} - Skipping box that is too small.")
             continue
-
-        crop = working_image.crop((x1, y1, x2, y2))
-        extracted_bounding_boxes.append(crop)
+        if not include_original:
+            extracted_bounding_boxes.append((x1, y1, x2, y2))
+        else:
+            # this is a bit messy, but I'd like to have the original bbox without doing inference twice
+            extracted_bounding_boxes.append(((x1, y1, x2, y2), tuple(bbox.tolist())))
 
     return extracted_bounding_boxes
 
 
+def extract_predictions_from_image(predictor, image, horizontal_scale=1.5, vertical_scale=1.2, min_width=0,
+                                   min_height=0, bounding_box_color=None):
+    """
+    Cuts out all bounding boxes predicted by a predictor from a given image. The boxes will be scaled equally in all
+    directions to include the surroundings.
+    Will draw the original bounding box if given a bounding_box color.
+    Wrapper function for _crop_boxes_from_image and _get_bounding_boxes.
+
+    :param predictor: the predictor used to detect bounding boxes
+    :param image: the source image
+    :param horizontal_scale: how much the cutout is scaled horizontally compared to bbox
+    :param vertical_scale: how much the cutout is scaled vertically compared to bbox
+    :param min_height: the minimum height a bbox has to have to be cut out
+    :param min_width: the minimum width a bbox has to have to be cut out
+    :param bounding_box_color: (R, G, B) color of original drawing box, will be ignored if None.
+    :return: List of images, which are cutout from image. May be empty.
+    """
+    bboxes = _get_bounding_boxes(
+        predictor, image,
+        horizontal_scale=horizontal_scale, vertical_scale=vertical_scale, min_width=min_width, min_height=min_height,
+        include_original=True
+    )
+    # make sure to have a copy, in case we draw on the image
+    working_image = image.copy()
+
+    if bounding_box_color:
+        # draw original boxes into image
+        draw = ImageDraw.Draw(working_image)
+        for scaled, original in bboxes:
+            draw.rectangle(original, outline=bounding_box_color, width=1)
+
+    return _crop_boxes_from_image(working_image, [scaled for scaled, original in bboxes])
+
+
+def _crop_boxes_from_image(image, boxes):
+    """
+    Given a list of boxes in format (x1, y1, x2, y2), get a list of cutouts of these boxes from a source image.
+    :param image: source image
+    :param boxes: list of boxes to cut out from source image
+    :return: list of images
+    """
+    cutouts = []
+
+    for box in boxes:
+        working_image = image.copy()
+        crop = working_image.crop(box)
+        cutouts.append(crop)
+
+    return cutouts
+
+
 if __name__ == "__main__":
+
+    # some weird warning in PyTorch, does not concern us
+    warnings.filterwarnings("ignore")
 
     parser = argparse.ArgumentParser(description='Apply trained model to image and cut out any matches if found.')
 
@@ -117,17 +168,10 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    if args.verbose >= 3:
-        logger.setLevel(logging.DEBUG)
-    elif args.verbose >= 2:
-        logger.setLevel(logging.INFO)
-    elif args.verbose >= 1:
-        logger.setLevel(logging.WARNING)
-
     generated_files = []
     model = _build_detection_model(args.model_path)
 
-    for input_file in tqdm(args.input, disable=(not args.progressbar), leave=None):
+    for input_file in tqdm(args.input):
         logger.debug(f"Evaluating {input_file}")
         path = pathlib.Path(input_file)
         filename = path.stem
@@ -135,7 +179,7 @@ if __name__ == "__main__":
 
         im = Image.open(input_file)
 
-        cutouts = _extract_from_image(model, im, include_bounding_box=args.bounding_box)
+        cutouts = extract_predictions_from_image(model, im, bounding_box_color=(255, 0, 0) if args.bounding_box else None)
 
         if not cutouts:
             logger.info(f"{input_file} - No extractable entities found.")
@@ -147,7 +191,3 @@ if __name__ == "__main__":
             generated_files.append(outfile)
 
         logger.info(f"{input_file} - Extracted {len(cutouts)} entities.")
-
-    if args.generated:
-        for file_path in generated_files:
-            print(file_path)

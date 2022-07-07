@@ -1,5 +1,4 @@
 import argparse
-import pathlib
 
 import torch
 from PIL import Image

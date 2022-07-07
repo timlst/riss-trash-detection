@@ -1,8 +1,14 @@
-from bounding_box_extractor import _build_detection_model, _extract_from_image
+import pathlib
+
+from bounding_box_extractor import _build_detection_model, extract_predictions_from_image
 from classifier import *
 from classifier import _build_classification_model, _classify, _image_to_normalized_tensor
 
 if __name__ == "__main__":
+
+    # some weird warning in PyTorch, does not concern us
+    warnings.filterwarnings("ignore")
+
     parser = argparse.ArgumentParser(description='Detect trash cans, cut them out and classify the cutouts.')
 
     parser.add_argument('-i', '--input',
@@ -45,7 +51,7 @@ if __name__ == "__main__":
         filename = path.stem
         extension = path.suffix
 
-        cutouts = _extract_from_image(detector, im, include_bounding_box=args.bounding_box)
+        cutouts = extract_predictions_from_image(detector, im, bounding_box_color=(255, 0, 0) if args.bounding_box else None)
 
         for idx, c in enumerate(cutouts):
             class_name, confidence = _classify(

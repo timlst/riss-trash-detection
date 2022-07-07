@@ -1,4 +1,3 @@
-
 from bounding_box_extractor import _build_detection_model, _extract_from_image
 from classifier import *
 from classifier import _build_classification_model, _classify, _image_to_normalized_tensor
@@ -30,7 +29,6 @@ if __name__ == "__main__":
     parser.add_argument('-c', '--classification-model-path',
                         required=True,
                         help='filepath of the classification model to use.')
-
 
     args = parser.parse_args()
 

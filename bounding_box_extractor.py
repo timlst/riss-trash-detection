@@ -1,15 +1,12 @@
 import argparse
 import logging
 import pathlib
-import sys
 
 import numpy as np
 from PIL import Image, ImageDraw
-from detectron2.checkpoint import DetectionCheckpointer
 from detectron2.config import get_cfg
 from detectron2.engine import DefaultPredictor
 from detectron2.model_zoo import model_zoo
-from detectron2.modeling import build_model
 
 from tqdm import tqdm
 

@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
 import os
-import sys
-
 from detectron2 import model_zoo
-from detectron2.config import get_cfg
+from detectron2.config import get_cfg, LazyConfig
 from detectron2.data import MetadataCatalog, DatasetCatalog
 from detectron2.engine import DefaultPredictor
 from detectron2.engine import DefaultTrainer
@@ -11,6 +9,8 @@ from detectron2.utils.logger import setup_logger
 from detectron2.evaluation import COCOEvaluator, inference_on_dataset
 from detectron2.data import build_detection_test_loader
 from detectron2.data.datasets import register_coco_instances
+from detectron2_backbone import backbone
+from detectron2_backbone.config import add_backbone_config
 
 # Setup detectron2 logger
 setup_logger(output="./output/", name="detectron2", abbrev_name="d2")
@@ -26,7 +26,7 @@ class MyTrainer(DefaultTrainer):
 
 cfg = get_cfg()
 os.makedirs(cfg.OUTPUT_DIR, exist_ok=True)
-cfg.merge_from_file("SERVER_RESNET101.yaml")
+cfg.merge_from_file("MOBILE_RESNET18.yaml")
 
 # dont care, we always train on GPU!
 cfg.MODEL.DEVICE = "cuda:0"
@@ -37,25 +37,23 @@ register_coco_instances("combined_validation", {}, f"{WORKING_FOLDER}combined_da
 register_coco_instances("combined_test", {}, f"{WORKING_FOLDER}combined_dataset_test.json", WORKING_FOLDER)
 
 """
-HOW THE CONFIG WAS MADE
-
-cfg.merge_from_file(model_zoo.get_config_file("COCO-Detection/faster_rcnn_R_101_FPN_3x.yaml"))
-cfg.MODEL.WEIGHTS = model_zoo.get_checkpoint_url("COCO-Detection/faster_rcnn_R_101_FPN_3x.yaml")
+HOW THE ORIGINAL CONFIG WAS GENERATED BASED ON
 
 cfg.DATASETS.TRAIN = ("combined_train",)
 cfg.DATASETS.TEST = ("combined_validation",)
 
-# Use SOLVER config from base configuration file
-# cfg.SOLVER.BASE_LR = 1e-6  # pick a good LR, wtf is that supposed to mean, previous 0.00025 did not work for R101
-# cfg.SOLVER.MAX_ITER = 30000  # arbitrarily chosen
-# cfg.SOLVER.STEPS = []  # do not decay learning rate
-# cfg.SOLVER.OPTIMIZER = "ADAM"
-cfg.SOLVER.IMS_PER_BATCH = 4  # This is the real "batch size" commonly known to deep learning people
+# Separate this from normal classifier
+cfg.OUTPUT_DIR = "output_mobile"
+
+cfg.SOLVER.MAX_ITER = 30000  # after ~30k iters we are mostly stagnant, empirically proven
+
+cfg.SOLVER.IMS_PER_BATCH = 8  # This is the real "batch size" commonly known to deep learning people
 
 cfg.DATALOADER.NUM_WORKERS = 8
+# Train with negative examples
+cfg.DATALOADER.FILTER_EMPTY_ANNOTATIONS = False
 
 # Finetune for just finding bounding boxes
-# cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE = 512  # Default may be a good start-
 cfg.MODEL.ROI_HEADS.NUM_CLASSES = 1  # We are just looking for positives
 
 # Train on GPU
@@ -71,46 +69,22 @@ print(f"{ITERATIONS_PER_EPOCH} iterations per epoch at batch size of {cfg.SOLVER
 cfg.TEST.EVAL_PERIOD = ITERATIONS_PER_EPOCH
 cfg.SOLVER.CHECKPOINT_PERIOD = ITERATIONS_PER_EPOCH
 
-with open("SERVER_RESNET101.yaml", "w") as f:
+with open("MOBILE_RESNET18.yaml", "w") as f:
     f.write(cfg.dump())
-    """
+"""
 
 trainer = MyTrainer(cfg)
 
-print("*" * 10)
-print("Starting training.")
-print("*" * 10)
+delim = '*'*10
+print(f"{delim}\nStarting training.\n{delim}")
 
-trainer.resume_or_load(resume=True)
+trainer.resume_or_load(resume=False)
 trainer.train()
 
-print("*" * 10)
-print("Starting test set evaluation.")
-print("*" * 10)
+print(f"{delim}\nStarting test set evaluation.\n{delim}")
 
-cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.75  # set a custom testing threshold
 predictor = DefaultPredictor(cfg)
 
 evaluator = COCOEvaluator("combined_test", output_dir=cfg.OUTPUT_DIR)
 test_data_loader = build_detection_test_loader(cfg, "combined_test")
 print(inference_on_dataset(predictor.model, test_data_loader, evaluator))
-
-# test_dataset_dicts = DatasetCatalog.get("combined_test")
-# metadata = MetadataCatalog.get("combined_test")
-#
-# def show_image_to_user(window_name, im):
-#    cv2.imshow(window_name, im)
-#    cv2.waitKey(0)
-#    cv2.destroyAllWindows()
-# for d in test_dataset_dicts:
-#    im = cv2.imread(d["file_name"])
-#    outputs = predictor(im)
-#    v = Visualizer(im[:, :, ::-1],
-#                   metadata=metadata,
-#                   scale=1,
-#                   instance_mode=ColorMode.IMAGE
-#                   )
-#    out = v.draw_instance_predictions(outputs["instances"].to("cpu"))
-#    show_image_to_user("prediction", out.get_image()[:, :, ::-1])
-#
-# print("Inference done")

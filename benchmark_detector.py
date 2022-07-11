@@ -18,6 +18,9 @@ from pycocotools.coco import COCO
 from pycocotools.cocoeval import COCOeval
 from torch.utils.data import RandomSampler, DataLoader
 from tqdm import trange
+# in case we want to use RESNET18
+from detectron2_backbone import backbone
+from detectron2_backbone.config import add_backbone_config
 
 from bounding_box_extractor import _build_detection_model
 
@@ -62,6 +65,11 @@ parser.add_argument('-p', '--predictions',
                          'Will be generated in output folder by default, only makes sense with --skip-evaluation',
                     default="./benchmark/coco_instances_results.json")
 
+parser.add_argument('-c', '--config',
+                    required=False,
+                    help="File or model zoo path for config file (if you want to evaluate or benchmark)",
+                    default='SERVER_RESNET101.yaml')
+
 args = parser.parse_args()
 
 prev_dir = os.getcwd()
@@ -76,9 +84,9 @@ if not args.skip_evaluation or not args.skip_benchmark:
     logger.debug("Building model.")
     # its necessary to set threshhold to 0 for COCO to have the full spectrum available (otherwise a default of 0.05
     # is used)
-
-    predictor, cfg = _build_detection_model(args.model_path,
+    predictor, cfg = _build_detection_model(args.model_path, config_file=args.config,
                                             additional_options=["MODEL.ROI_HEADS.SCORE_THRESH_TEST", "0.0"])
+    print(cfg)
     logger.debug("Model loaded.")
 
     test_data_loader = build_detection_test_loader(cfg, "test_data")

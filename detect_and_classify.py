@@ -40,7 +40,7 @@ if __name__ == "__main__":
 
     class_names = ("Empty", "Full", "Garbage Bag")
 
-    detector = _build_detection_model(args.detection_model_path)
+    detector, _ = _build_detection_model(args.detection_model_path)
     classifier = _build_classification_model(args.classification_model_path)
 
     for input_file in args.input:

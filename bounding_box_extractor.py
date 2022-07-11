@@ -1,6 +1,8 @@
 import argparse
 import logging
+import os.path
 import pathlib
+import sys
 import warnings
 
 import numpy as np
@@ -16,28 +18,42 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("extraction")
 
 
-def _build_detection_model(model_path, model_zoo_config_file="COCO-Detection/faster_rcnn_R_101_FPN_3x.yaml"):
-    """Builds a dtection model from file path to previous weights and path of model_zoo config file.
+def _build_detection_model(model_path, config_file="COCO-Detection/faster_rcnn_R_101_FPN_3x.yaml",
+                           additional_options=None):
+    """Builds a detection model from file path to previous weights and path of model_zoo config file.
 
     :param model_path: file path to weights file (.pth)
-    :param model_zoo_config_file: path in model_zoo, will be ignored if None
-    :return: a model wrapped by DefaultPredictor
+    :param config_file: path to config in model_zoo or system, will be ignored if None, will check model zoo first
+    :param additional_options: additional cfg parameters that will be passed to the model.
+    Always use type appropiate notation regardless of type (i.e 1.0 when float)
+    :return: (a model wrapped by DefaultPredictor, config)
     """
     cfg = get_cfg()
 
-    if model_zoo_config_file:
+    if config_file:
         # Get Faster R-CNN model config we started out learning from
-        cfg.merge_from_file(model_zoo.get_config_file(model_zoo_config_file))
+        try:
+            # is it a model zoo file?
+            cfg.merge_from_file(model_zoo.get_config_file(config_file))
+        except RuntimeError:
+            # is it a system file?
+            if os.path.exists(config_file):
+                cfg.merge_from_file(config_file)
 
-    cfg.MODEL.ROI_HEADS.NUM_CLASSES = 1
+    # so that given weights get loaded by DefaultPredictor
     cfg.MODEL.WEIGHTS = model_path
+
+    if additional_options:
+        cfg.merge_from_list(additional_options)
+
+    cfg.freeze()
 
     # DetectionCheckpointer(model).load(cfg.MODEL.WEIGHTS)
     predictor = DefaultPredictor(cfg)
 
     logger.debug("Model loaded.")
 
-    return predictor
+    return predictor, cfg
 
 
 def _get_bounding_boxes(predictor, image, horizontal_scale=1.5, vertical_scale=1.2, min_width=0, min_height=0,
@@ -166,10 +182,16 @@ if __name__ == "__main__":
                         required=True,
                         help='filepath of the model to use.')
 
+    parser.add_argument('-a', '--additional-options',
+                        required=False,
+                        nargs="+",
+                        help="Additional arguments to be passed to the model cfg")
+
     args = parser.parse_args()
 
+
     generated_files = []
-    model = _build_detection_model(args.model_path)
+    model, _ = _build_detection_model(args.model_path, additional_options=args.additional_options)
 
     for input_file in tqdm(args.input):
         logger.debug(f"Evaluating {input_file}")

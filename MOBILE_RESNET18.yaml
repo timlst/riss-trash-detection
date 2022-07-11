@@ -58,7 +58,7 @@ MODEL:
   BACKBONE:
     FREEZE_AT: 2
     NAME: build_resnet18_fpn_backbone
-  DEVICE: cuda:0
+  DEVICE: cpu
   FPN:
     FUSE_TYPE: sum
     IN_FEATURES:

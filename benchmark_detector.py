@@ -4,6 +4,7 @@ import os
 import sys
 
 import numpy as np
+import torch
 from detectron2.checkpoint import DetectionCheckpointer
 from detectron2.config import get_cfg
 from detectron2.data import build_detection_test_loader
@@ -15,6 +16,10 @@ from detectron2.modeling import build_model
 from matplotlib import pyplot as plt
 from pycocotools.coco import COCO
 from pycocotools.cocoeval import COCOeval
+from torch.utils.data import RandomSampler, DataLoader
+from tqdm import trange
+
+from bounding_box_extractor import _build_detection_model
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("benchmark")
@@ -45,6 +50,12 @@ parser.add_argument('--skip-evaluation',
                     help="Will skip evaluation on the testset and instead just plot PR curve."
                          "Requires coco_instances_results.json in output folder.")
 
+parser.add_argument('--skip-benchmark',
+                    required=False,
+                    default=False,
+                    action='store_true',
+                    help="Will skip testing inference time on the testset.")
+
 parser.add_argument('-p', '--predictions',
                     required=False,
                     help='Filepath to predictions in COCO format. '
@@ -56,32 +67,25 @@ args = parser.parse_args()
 prev_dir = os.getcwd()
 os.makedirs(args.output, exist_ok=True)
 
-if not args.skip_evaluation:
+if not args.skip_evaluation or not args.skip_benchmark:
+    # only initialize model and load data if required by one of the two
     logger.debug("Loading test set.")
     register_coco_instances("test_data", {}, args.annotations, args.images)
     logger.debug("Test set loaded.")
 
+    logger.debug("Building model.")
+    # its necessary to set threshhold to 0 for COCO to have the full spectrum available (otherwise a default of 0.05
+    # is used)
 
-    logger.debug("Loading model.")
-    cfg = get_cfg()
-    model = build_model(cfg)
-
-    # Get Faster R-CNN model config we started out learning from
-    cfg.merge_from_file(model_zoo.get_config_file("COCO-Detection/faster_rcnn_R_101_FPN_3x.yaml"))
-    # cfg.merge_from_file(model_zoo.get_config_file("COCO-Detection/faster_rcnn_R_50_FPN_3x.yaml"))
-
-    cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0
-    cfg.MODEL.WEIGHTS = args.model_path
-    cfg.MODEL.ROI_HEADS.NUM_CLASSES = 1
-
-    DetectionCheckpointer(model).load(cfg.MODEL.WEIGHTS)
+    predictor, cfg = _build_detection_model(args.model_path,
+                                            additional_options=["MODEL.ROI_HEADS.SCORE_THRESH_TEST", "0.0"])
     logger.debug("Model loaded.")
 
-    predictor = DefaultPredictor(cfg)
+    test_data_loader = build_detection_test_loader(cfg, "test_data")
 
+if not args.skip_evaluation:
     evaluator = COCOEvaluator("test_data", output_dir=args.output)
 
-    test_data_loader = build_detection_test_loader(cfg, "test_data")
     logger.info(inference_on_dataset(predictor.model, test_data_loader, evaluator))
 
 # Generate PR Curve
@@ -117,7 +121,8 @@ AREA_INDEX = 0
 # we are class-agnostic and therefore have only one category anyways, so that one
 CATEGORY_ID = 0
 
-ious = np.arange(0.5, 1, 0.05)
+# ious = np.arange(0.5, 1, 0.05)
+ious = np.arange(0.5, 0.51, 0.05)
 recall = np.arange(0, 1.01, 0.01)
 
 fig, ax = plt.subplots()
@@ -125,13 +130,47 @@ fig, ax = plt.subplots()
 for idx, iou in enumerate(ious):
     ax.plot(recall, precision[idx, :, CATEGORY_ID, AREA_INDEX, MAX_DETS], label=f"IoU@{iou:.2f}")
 
-ax.legend(title='PR with different IoUs:')
+ax.legend()
 ax.set_xlabel("Recall")
-ax.set_ylabel("Accuracy")
+ax.set_ylabel("Precision")
+ax.grid(alpha=0.5)
 
 ax.set_title("PR Curve")
 
 plt.show()
+
+
+# Benchmark Inference time o
+
+def benchmark_inference_time(pred: DefaultPredictor, data, device):
+    dummy_input = torch.randn(1, 3, 224, 224, dtype=torch.float).to(device)
+    starter, ender = torch.cuda.Event(enable_timing=True), torch.cuda.Event(enable_timing=True)
+    repetitions = 10
+    timings = np.zeros((repetitions, 1))
+
+    # MEASURE PERFORMANCE
+    with torch.no_grad():
+        for rep in trange(repetitions):
+            starter.record()
+            inference_on_dataset(pred.model, data, evaluator=None)
+            ender.record()
+            # WAIT FOR GPU SYNC
+            torch.cuda.synchronize()
+            curr_time = starter.elapsed_time(ender)
+            timings[rep] = curr_time
+
+    # Discard first result as they are warmup
+    timings = timings[1:]
+
+    mean_syn = np.sum(timings) / repetitions
+    std_syn = np.std(timings)
+    print(mean_syn)
+    print(std_syn)
+
+
+if not args.skip_benchmark:
+    print("Starting benchmark.")
+    benchmark_inference_time(predictor, test_data_loader, device="cuda:0")
 
 # go back to original directory
 os.chdir(prev_dir)

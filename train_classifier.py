@@ -160,6 +160,7 @@ def train_model(model, criterion, optimizer, scheduler, num_epochs=25, device='c
             if phase == 'val' and epoch_acc > best_acc:
                 best_acc = epoch_acc
                 best_model_wts = copy.deepcopy(model.state_dict())
+                torch.save(model, f"output/classifier_{epoch}.pth")
 
         print()
 
@@ -173,7 +174,7 @@ def train_model(model, criterion, optimizer, scheduler, num_epochs=25, device='c
     return model
 
 
-new_model = train_model(model_fe, criterion, optimizer_ft, exp_lr_scheduler, num_epochs=10, device=device)
+new_model = train_model(model_fe, criterion, optimizer_ft, exp_lr_scheduler, num_epochs=20, device=device)
 new_model.train()
 torch.save(new_model, "output/classifier_final.pth")
 

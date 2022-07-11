@@ -1,0 +1,12 @@
+__pycache__/
+.venv
+.idea/
+.gitattributes
+BusEdge-BusStopSamples/
+detectron2_backbone/
+weights/
+output*/
+benchmark/
+benchmark_mobile/
+Waste_Bin_Detection_Dataset
+Waste_Bin_Multi-Class_Detection_Dataset

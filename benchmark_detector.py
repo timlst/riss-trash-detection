@@ -124,19 +124,22 @@ recall = cocoEval.eval["recall"]
 
 # we don't expect many detections per image, so might as well include the maximum of 100 (index for list [1, 10, 100])
 MAX_DETS = 2
-# we are interested in boxes regardless of their size, so we choose index 0 for "all" boxes
-AREA_INDEX = 0
 # we are class-agnostic and therefore have only one category anyways, so that one
 CATEGORY_ID = 0
 
 # ious = np.arange(0.5, 1, 0.05)
 ious = np.arange(0.5, 0.51, 0.05)
+
+# we are interested in boxes regardless of their size, so we choose index 0 for "all" boxes
+areas = [0, 3]
+area_labels = ["all", "small", "medium", "large"]
 recall = np.arange(0, 1.01, 0.01)
 
 fig, ax = plt.subplots()
 
 for idx, iou in enumerate(ious):
-    ax.plot(recall, precision[idx, :, CATEGORY_ID, AREA_INDEX, MAX_DETS], label=f"IoU@{iou:.2f}")
+    for area_index in areas:
+        ax.plot(recall, precision[idx, :, CATEGORY_ID, area_index, MAX_DETS], label=f"IoU@{iou:.2f} for {area_labels[area_index]} areas")
 
 ax.legend()
 ax.set_xlabel("Recall")

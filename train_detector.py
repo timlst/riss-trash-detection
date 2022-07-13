@@ -26,7 +26,7 @@ class MyTrainer(DefaultTrainer):
 
 cfg = get_cfg()
 os.makedirs(cfg.OUTPUT_DIR, exist_ok=True)
-cfg.merge_from_file("SERVER_RESNET101.yaml")
+cfg.merge_from_file("SERVER_DETECTOR.yaml")
 
 # dont care, we always train on GPU!
 cfg.MODEL.DEVICE = "cuda:0"

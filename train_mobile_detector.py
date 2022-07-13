@@ -15,7 +15,6 @@ from detectron2_backbone.config import add_backbone_config
 # Setup detectron2 logger
 setup_logger(output="./output/", name="detectron2", abbrev_name="d2")
 
-
 class MyTrainer(DefaultTrainer):
     @classmethod
     def build_evaluator(cls, cfg, dataset_name, output_folder=None):
@@ -26,7 +25,7 @@ class MyTrainer(DefaultTrainer):
 
 cfg = get_cfg()
 os.makedirs(cfg.OUTPUT_DIR, exist_ok=True)
-cfg.merge_from_file("MOBILE_RESNET18.yaml")
+cfg.merge_from_file("MOBILE_DETECTOR.yaml")
 
 # dont care, we always train on GPU!
 cfg.MODEL.DEVICE = "cuda:0"
@@ -35,6 +34,7 @@ WORKING_FOLDER = "./Waste_Bin_Detection_Dataset/combined/"
 register_coco_instances("combined_train", {}, f"{WORKING_FOLDER}combined_dataset_train.json", WORKING_FOLDER)
 register_coco_instances("combined_validation", {}, f"{WORKING_FOLDER}combined_dataset_validation.json", WORKING_FOLDER)
 register_coco_instances("combined_test", {}, f"{WORKING_FOLDER}combined_dataset_test.json", WORKING_FOLDER)
+register_coco_instances("combined_test_tiny", {}, f"{WORKING_FOLDER}combined_dataset_test_tiny.json", WORKING_FOLDER)
 
 """
 HOW THE ORIGINAL CONFIG WAS GENERATED BASED ON
@@ -78,7 +78,7 @@ trainer = MyTrainer(cfg)
 delim = '*'*10
 print(f"{delim}\nStarting training.\n{delim}")
 
-trainer.resume_or_load(resume=False)
+trainer.resume_or_load(resume=True)
 trainer.train()
 
 print(f"{delim}\nStarting test set evaluation.\n{delim}")

@@ -1,5 +1,8 @@
 import pathlib
 
+from tqdm import tqdm
+
+import utils
 from bounding_box_extractor import _build_detection_model, extract_predictions_from_image
 from classifier import *
 from classifier import _build_classification_model, _classify, _image_to_normalized_tensor
@@ -28,9 +31,13 @@ if __name__ == "__main__":
                         default=False,
                         help='Include the original bounding box in the cutout.')
 
-    parser.add_argument('-d', '--detection-model-path',
+    parser.add_argument('-d', '--detection-model-config',
                         required=True,
-                        help='filepath of the detection model to use.')
+                        help='filepath of the config for detection model to use.')
+
+    parser.add_argument('-w', '--detection-model-weights',
+                        required=False,
+                        help='filepath of the model weights to use, takes precedence of weights in config.')
 
     parser.add_argument('-c', '--classification-model-path',
                         required=True,
@@ -40,10 +47,12 @@ if __name__ == "__main__":
 
     class_names = ("Empty", "Full", "Garbage Bag")
 
-    detector, _ = _build_detection_model(args.detection_model_path)
+    detector_cfg = utils.get_config_from_path(args.detection_model_config)
+
+    detector, _ = _build_detection_model(detector_cfg, weights_path=args.detection_model_weights)
     classifier = _build_classification_model(args.classification_model_path)
 
-    for input_file in args.input:
+    for input_file in tqdm(args.input):
         im = Image.open(input_file)
 
         # path info for naming output file

@@ -22,6 +22,7 @@ from tqdm import trange
 from detectron2_backbone import backbone
 from detectron2_backbone.config import add_backbone_config
 
+import utils
 from bounding_box_extractor import _build_detection_model
 
 logging.basicConfig(level=logging.INFO)
@@ -29,22 +30,28 @@ logger = logging.getLogger("benchmark")
 
 parser = argparse.ArgumentParser(description='Generate certain metrics for a given detection model and test dataset')
 
-parser.add_argument('-a', '--annotations',
-                    required=True,
-                    help='Filepath to COCO ground truth annotations.')
 
 parser.add_argument('-i', '--images',
                     required=True,
                     help='Filepath to working folder for images (coco image paths may be relative)')
 
-parser.add_argument('-m', '--model_path',
-                    required=True,
-                    help='filepath of the model to use.')
-
-parser.add_argument('-o', '--output',
+parser.add_argument('-c', '--config',
                     required=False,
-                    help='Filepath for results',
-                    default='./benchmark/')
+                    help="File or model zoo path for config file (if you want to evaluate or benchmark)")
+
+parser.add_argument('-w', '--weights_path',
+                    required=False,
+                    help='filepath of the model weights to use, takes precedence over config.')
+
+parser.add_argument('-a', '--annotations',
+                    required=True,
+                    help='Filepath to COCO ground truth annotations.')
+
+parser.add_argument('-p', '--predictions',
+                    required=False,
+                    help='Filepath to predictions in COCO format. '
+                         'Will be generated in output folder by default, only makes sense with --skip-evaluation',
+                    default="./benchmark/coco_instances_results.json")
 
 parser.add_argument('--skip-evaluation',
                     required=False,
@@ -59,16 +66,10 @@ parser.add_argument('--skip-benchmark',
                     action='store_true',
                     help="Will skip testing inference time on the testset.")
 
-parser.add_argument('-p', '--predictions',
+parser.add_argument('-o', '--output',
                     required=False,
-                    help='Filepath to predictions in COCO format. '
-                         'Will be generated in output folder by default, only makes sense with --skip-evaluation',
-                    default="./benchmark/coco_instances_results.json")
-
-parser.add_argument('-c', '--config',
-                    required=False,
-                    help="File or model zoo path for config file (if you want to evaluate or benchmark)",
-                    default='SERVER_RESNET101.yaml')
+                    help='Filepath for results',
+                    default='./benchmark/')
 
 args = parser.parse_args()
 
@@ -84,8 +85,8 @@ if not args.skip_evaluation or not args.skip_benchmark:
     logger.debug("Building model.")
     # its necessary to set threshhold to 0 for COCO to have the full spectrum available (otherwise a default of 0.05
     # is used)
-    predictor, cfg = _build_detection_model(args.model_path, config_file=args.config,
-                                            additional_options=["MODEL.ROI_HEADS.SCORE_THRESH_TEST", "0.0"])
+    cfg = utils.get_config_from_path(args.config)
+    predictor, cfg = _build_detection_model(cfg, weights_path=args.weights_path, additional_options=["MODEL.ROI_HEADS.SCORE_THRESH_TEST", "0.0"])
     print(cfg)
     logger.debug("Model loaded.")
 

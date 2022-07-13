@@ -1,154 +1,42 @@
+"""
+This script loads a model based on a given config (and optionally weights) and cuts out all the predicted bounding boxes.
+It also provides functionality to crop boxes if only imported as a module.
+"""
 import argparse
 import logging
 import os.path
 import pathlib
-import sys
 import warnings
 
-import numpy as np
-import torch
 from PIL import Image, ImageDraw
-from detectron2.checkpoint import DetectionCheckpointer
-from detectron2.config import get_cfg
-from detectron2.data import MetadataCatalog
-from detectron2.engine import DefaultPredictor
-from detectron2.model_zoo import model_zoo
-from detectron2.modeling import build_model
-import detectron2.data.transforms as T
+from detectron2.config import CfgNode, get_cfg
+from detectron2.model_zoo import get_config, get_config_file
 
 from tqdm import tqdm
 
 # we dont want detectron2 loading logs
+import utils
+from detection_model import _get_bounding_boxes, _build_detection_model
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("extraction")
 
 
-class MyPredictor:
-    def __init__(self, cfg):
-        self.cfg = cfg.clone()  # cfg can be modified by model
-        self.model = build_model(self.cfg)
-        self.model.eval()
-        if len(cfg.DATASETS.TEST):
-            self.metadata = MetadataCatalog.get(cfg.DATASETS.TEST[0])
-
-        # load weights
-        checkpointer = DetectionCheckpointer(self.model)
-        checkpointer.load(cfg.MODEL.WEIGHTS)
-
-        self.aug = T.ResizeShortestEdge(
-            [cfg.INPUT.MIN_SIZE_TEST, cfg.INPUT.MIN_SIZE_TEST], cfg.INPUT.MAX_SIZE_TEST
-        )
-
-        self.input_format = cfg.INPUT.FORMAT
-        assert self.input_format in ["RGB", "BGR"], self.input_format
-
-    def __call__(self, original_image):
-        """
-        Args:
-            original_image (np.ndarray): an image of shape (H, W, C) (in BGR order).
-
-        Returns:
-            predictions (dict):
-                the output of the model for one image only.
-                See :doc:`/tutorials/models` for details about the format.
-        """
-        with torch.no_grad():  # https://github.com/sphinx-doc/sphinx/issues/4258
-            # Apply pre-processing to image.
-            if self.input_format == "RGB":
-                # whether the model expects BGR inputs or RGB
-                original_image = original_image[:, :, ::-1]
-            height, width = original_image.shape[:2]
-            image = self.aug.get_transform(original_image).apply_image(original_image)
-            image = torch.as_tensor(image.astype("float32").transpose(2, 0, 1))
-
-            inputs = {"image": image, "height": height, "width": width}
-            predictions = self.model([inputs])[0]
-            return predictions
-
-
-def _build_detection_model(model_path, config_file="COCO-Detection/faster_rcnn_R_101_FPN_3x.yaml",
-                           additional_options=None):
-    """Builds a detection model from file path to previous weights and path of model_zoo config file.
-
-    :param model_path: file path to weights file (.pth)
-    :param config_file: path to config in model_zoo or system, will be ignored if None, will check model zoo first
-    :param additional_options: additional cfg parameters that will be passed to the model.
-    Always use type appropiate notation regardless of type (i.e 1.0 when float)
-    :return: (a model wrapped by DefaultPredictor, config)
+def _crop_boxes_from_image(image, boxes):
     """
-    cfg = get_cfg()
-
-    if config_file:
-        # Get Faster R-CNN model config we started out learning from
-        try:
-            # is it a model zoo file?
-            cfg.merge_from_file(model_zoo.get_config_file(config_file))
-        except RuntimeError:
-            # is it a system file?
-            if os.path.exists(config_file):
-                cfg.merge_from_file(config_file)
-
-    # so that given weights get loaded by DefaultPredictor
-    cfg.MODEL.WEIGHTS = model_path
-
-    if additional_options:
-        cfg.merge_from_list(additional_options)
-
-    cfg.freeze()
-
-    predictor = MyPredictor(cfg)
-
-    logger.debug("Model loaded.")
-
-    return predictor, cfg
-
-
-def _get_bounding_boxes(predictor, image, horizontal_scale=1.5, vertical_scale=1.2, min_width=0, min_height=0,
-                        include_original=False):
+    Given a list of boxes in format (x1, y1, x2, y2), get a list of cutouts of these boxes from a source image.
+    :param image: source image
+    :param boxes: list of boxes to cut out from source image
+    :return: list of images
     """
-    Gives a list of all bounding boxes predicted by a predictor from a given image.
-    The boxes will be scaled equally in all directions to include the surroundings.
-    :param predictor: the predictor used to detect bounding boxes
-    :param image: the source image
-    :param horizontal_scale: how much the cutout is scaled horizontally compared to bbox
-    :param vertical_scale: how much the cutout is scaled vertically compared to bbox
-    :param min_height: the minimum height a bbox has to have to be cut out
-    :param min_width: the minimum width a bbox has to have to be cut out
-    :param include_original: return tuples (scaled_bbox, original_bbox) instead
-    :return: List of bounding boxes in image. May be empty.
-    """
-    outputs = predictor(np.asarray(image))
-    instances = outputs["instances"].to("cpu")
+    cropped_images = []
 
-    extracted_bounding_boxes = []
+    for box in boxes:
+        working_image = image.copy()
+        crop = working_image.crop(box)
+        cropped_images.append(crop)
 
-    for index, bbox in enumerate(instances.pred_boxes):
-        # copy to make sure we do not draw on original image
-        x1, y1, x2, y2 = bbox.tolist()
-
-        box_width = abs(x1 - x2)
-        box_height = abs(y1 - y2)
-
-        # delta to add/subtract to get the coords of our stretched bounding box on both sides
-        dx = (box_width * horizontal_scale) // 2
-        dy = (box_height * vertical_scale) // 2
-
-        # make sure bounding box doesn't extend beyond actual image and convert to int
-        x1 = int(max(0, x1 - dx))
-        y1 = int(max(0, y1 - dy))
-        x2 = int(min(image.size[0], x2 + dx))
-        y2 = int(min(image.size[1], y2 + dy))
-
-        if box_width < min_width or box_height < min_height:
-            logger.warning(f"{input_file} - Skipping box that is too small.")
-            continue
-        if not include_original:
-            extracted_bounding_boxes.append((x1, y1, x2, y2))
-        else:
-            # this is a bit messy, but I'd like to have the original bbox without doing inference twice
-            extracted_bounding_boxes.append(((x1, y1, x2, y2), tuple(bbox.tolist())))
-
-    return extracted_bounding_boxes
+    return cropped_images
 
 
 def extract_predictions_from_image(predictor, image, horizontal_scale=1.5, vertical_scale=1.2, min_width=0,
@@ -185,23 +73,6 @@ def extract_predictions_from_image(predictor, image, horizontal_scale=1.5, verti
     return _crop_boxes_from_image(working_image, [scaled for scaled, original in bboxes])
 
 
-def _crop_boxes_from_image(image, boxes):
-    """
-    Given a list of boxes in format (x1, y1, x2, y2), get a list of cutouts of these boxes from a source image.
-    :param image: source image
-    :param boxes: list of boxes to cut out from source image
-    :return: list of images
-    """
-    cutouts = []
-
-    for box in boxes:
-        working_image = image.copy()
-        crop = working_image.crop(box)
-        cutouts.append(crop)
-
-    return cutouts
-
-
 if __name__ == "__main__":
 
     # some weird warning in PyTorch, does not concern us
@@ -225,9 +96,13 @@ if __name__ == "__main__":
                         default=False,
                         help='Include the original bounding box before resizing')
 
-    parser.add_argument('-m', '--model_path',
+    parser.add_argument('-c', '--config',
                         required=True,
-                        help='filepath of the model to use.')
+                        help="Config file to be loaded for model. Will look in file system first, then model zoo.")
+
+    parser.add_argument('-w', '--weights_path',
+                        required=False,
+                        help='filepath of the model weights to use, takes precedence of weights in config.')
 
     parser.add_argument('-a', '--additional-options',
                         required=False,
@@ -236,9 +111,10 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
+    cfg = utils.get_config_from_path(args.config)
 
     generated_files = []
-    model, _ = _build_detection_model(args.model_path, additional_options=args.additional_options)
+    model, _ = _build_detection_model(cfg, weights_path=args.weights_path, additional_options=args.additional_options)
 
     for input_file in tqdm(args.input):
         logger.debug(f"Evaluating {input_file}")
@@ -248,7 +124,8 @@ if __name__ == "__main__":
 
         im = Image.open(input_file)
 
-        cutouts = extract_predictions_from_image(model, im, bounding_box_color=(255, 0, 0) if args.bounding_box else None)
+        cutouts = extract_predictions_from_image(model, im,
+                                                 bounding_box_color=(255, 0, 0) if args.bounding_box else None)
 
         if not cutouts:
             logger.info(f"{input_file} - No extractable entities found.")

@@ -8,15 +8,19 @@ import os.path
 import pathlib
 import warnings
 
+import cv2
+import numpy as np
 from PIL import Image, ImageDraw
 from detectron2.config import CfgNode, get_cfg
 from detectron2.model_zoo import get_config, get_config_file
+from detectron2.utils.visualizer import Visualizer
+from matplotlib import pyplot as plt
 
 from tqdm import tqdm
 
 # we dont want detectron2 loading logs
 import utils
-from detection_model import _get_bounding_boxes, _build_detection_model
+from detection_model import _build_detection_model
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("extraction")
@@ -33,44 +37,31 @@ def _crop_boxes_from_image(image, boxes):
 
     for box in boxes:
         working_image = image.copy()
-        crop = working_image.crop(box)
+        crop = working_image.crop(box.tolist())
         cropped_images.append(crop)
 
     return cropped_images
 
 
-def extract_predictions_from_image(predictor, image, horizontal_scale=1.5, vertical_scale=1.2, min_width=0,
-                                   min_height=0, bounding_box_color=None):
+def extract_predictions_from_image(predictor, image, bounding_box_color=None):
     """
-    Cuts out all bounding boxes predicted by a predictor from a given image. The boxes will be scaled equally in all
-    directions to include the surroundings.
-    Will draw the original bounding box if given a bounding_box color.
-    Wrapper function for _crop_boxes_from_image and _get_bounding_boxes.
+    Cuts out all bounding boxes predicted by a predictor from a given image.
+    Will draw the original bounding box if given a bounding_box color
+    (will draw a list of given instance predictions on an image).
 
     :param predictor: the predictor used to detect bounding boxes
     :param image: the source image
-    :param horizontal_scale: how much the cutout is scaled horizontally compared to bbox
-    :param vertical_scale: how much the cutout is scaled vertically compared to bbox
-    :param min_height: the minimum height a bbox has to have to be cut out
-    :param min_width: the minimum width a bbox has to have to be cut out
     :param bounding_box_color: (R, G, B) color of original drawing box, will be ignored if None.
     :return: List of images, which are cutout from image. May be empty.
     """
-    bboxes = _get_bounding_boxes(
-        predictor, image,
-        horizontal_scale=horizontal_scale, vertical_scale=vertical_scale, min_width=min_width, min_height=min_height,
-        include_original=True
-    )
-    # make sure to have a copy, in case we draw on the image
-    working_image = image.copy()
+    predictions = predictor(np.asarray(image))
 
     if bounding_box_color:
-        # draw original boxes into image
-        draw = ImageDraw.Draw(working_image)
-        for scaled, original in bboxes:
-            draw.rectangle(original, outline=bounding_box_color, width=1)
+        visualizer = Visualizer(np.asarray(image)[:, :, ::-1])
+        out = visualizer.overlay_instances(boxes=predictions["instances"].to("cpu").original_pred_boxes)
+        image = Image.fromarray(out.get_image())
 
-    return _crop_boxes_from_image(working_image, [scaled for scaled, original in bboxes])
+    return _crop_boxes_from_image(image, predictions["instances"].pred_boxes)
 
 
 if __name__ == "__main__":

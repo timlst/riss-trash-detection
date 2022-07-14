@@ -12,19 +12,28 @@ from detectron2.config import get_cfg
 from detectron2.data import MetadataCatalog
 from detectron2.modeling import build_model
 import detectron2.data.transforms as T
-from detectron2_backbone import backbone # to allow custom backbones in cfg file
+from detectron2.structures import Boxes
+from detectron2_backbone import backbone  # to allow custom backbones in cfg file
 
 # we dont want detectron2 loading logs
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("detector")
 
 
-class MyPredictor:
+class ScaledBoundingBoxPredictor:
     """
-    Simple predictor that wraps a model and applies necessary transformations.
+    Predictor that wraps a model and scales predicted bounding boxes in all directions by a predetermined factor.
+    Adds an "original_pred_boxes" field to every instances object.
+    Filters out bounding boxes that do not have a minimum area.
     """
-    def __init__(self, cfg):
+
+    def __init__(self, cfg, horizontal_scale=1.5, vertical_scale=1.2, min_area=1):
         self.cfg = cfg.clone()  # cfg can be modified by model
+
+        self.horizontal_scale = horizontal_scale
+        self.vertical_scale = vertical_scale
+        self.min_area = min_area
+
         self.model = build_model(self.cfg)
         self.model.eval()
         if len(cfg.DATASETS.TEST):
@@ -62,18 +71,65 @@ class MyPredictor:
 
             inputs = {"image": image, "height": height, "width": width}
             predictions = self.model([inputs])[0]
+            predictions = self._scale_boxes(predictions)
+            predictions = self._filter_boxes(predictions)
+            print(predictions)
+
             return predictions
+
+    def _scale_boxes(self, predictions):
+        """Scales all predicted bounding boxes by given scale factors."""
+        instances = predictions["instances"]
+        if instances.pred_boxes:
+            # save for visualization purposes
+            instances.original_pred_boxes = instances.pred_boxes.clone()
+
+            def scale_single_box(tensor):
+                # i am sure there is some Matrix/Tensor mathmagic that does all this but in like a line of code
+                x1, y1, x2, y2 = tensor.tolist()
+
+                box_width = abs(x1 - x2)
+                box_height = abs(y1 - y2)
+
+                # delta to add/subtract to get the coords of our stretched bounding box on both sides
+                dx = (box_width * self.horizontal_scale) // 2
+                dy = (box_height * self.vertical_scale) // 2
+
+                # adjust the original tensor, so we preserve shape and location
+                tensor[0] = x1 - dx
+                tensor[1] = y1 - dy
+                tensor[2] = x2 + dx
+                tensor[3] = y2 + dy
+
+                return tensor
+            # iterate over boxes as (4,) tensors, scale them appropiately and stack back to (Nx4) tensor - guh
+            instances.pred_boxes = Boxes(torch.stack(tuple(map(scale_single_box, instances.pred_boxes))))
+            # the scaled boxes may go out of bounds which we do not want
+            instances.pred_boxes.clip(instances.image_size)
+
+
+        return predictions
+
+    def _filter_boxes(self, predictions):
+        """Filters out bounding boxes smaller than a minimal area."""
+        instances = predictions["instances"]
+        if instances.pred_boxes:
+            mask = instances.original_pred_boxes.area() > self.min_area
+            instances.pred_boxes = instances.pred_boxes[mask]
+            instances.original_pred_boxes = instances.original_pred_boxes[mask]
+        return predictions
 
 
 def _build_detection_model(base_cfg, weights_path=None,
-                           additional_options=None):
+                           additional_options=None, predictor_wrapper=ScaledBoundingBoxPredictor):
     """Builds a detection model from file path to previous weights and path of model_zoo config file.
 
     :param cfg: ConfigNode for Detectron2
     :param weights_path: file path to weights file (.pth) to be loaded, if nothing given in config
     :param additional_options: additional cfg parameters that will be passed to the model.
     Always use type appropiate notation regardless of type (i.e 1.0 when float)
-    :return: (a model wrapped by DefaultPredictor, config)
+    :param predictor_wrapper: A Predictor wrapper class that will be applied to the model
+    :return: (a model wrapped by predictor_wrapper, config)
     """
     cfg = get_cfg()
 
@@ -88,56 +144,8 @@ def _build_detection_model(base_cfg, weights_path=None,
 
     cfg.freeze()
 
-    predictor = MyPredictor(cfg)
+    predictor = predictor_wrapper(cfg)
 
     logger.debug("Model loaded.")
 
     return predictor, cfg
-
-
-def _get_bounding_boxes(predictor, image, horizontal_scale=1.5, vertical_scale=1.2, min_width=1, min_height=1,
-                        include_original=False):
-    """
-    Gives a list of all bounding boxes predicted by a predictor from a given image.
-    The boxes will be scaled equally in all directions to include the surroundings.
-    :param predictor: the predictor used to detect bounding boxes
-    :param image: the source image
-    :param horizontal_scale: how much the cutout is scaled horizontally compared to bbox
-    :param vertical_scale: how much the cutout is scaled vertically compared to bbox
-    :param min_height: the minimum height a bbox has to have to be cut out
-    :param min_width: the minimum width a bbox has to have to be cut out
-    :param include_original: return tuples (scaled_bbox, original_bbox) instead
-    :return: List of bounding boxes in image. May be empty.
-    """
-    outputs = predictor(np.asarray(image))
-    instances = outputs["instances"].to("cpu")
-
-    extracted_bounding_boxes = []
-
-    for index, bbox in enumerate(instances.pred_boxes):
-        # copy to make sure we do not draw on original image
-        x1, y1, x2, y2 = bbox.tolist()
-
-        box_width = abs(x1 - x2)
-        box_height = abs(y1 - y2)
-
-        # delta to add/subtract to get the coords of our stretched bounding box on both sides
-        dx = (box_width * horizontal_scale) // 2
-        dy = (box_height * vertical_scale) // 2
-
-        # make sure bounding box doesn't extend beyond actual image and convert to int
-        x1 = int(max(0, x1 - dx))
-        y1 = int(max(0, y1 - dy))
-        x2 = int(min(image.size[0], x2 + dx))
-        y2 = int(min(image.size[1], y2 + dy))
-
-        if box_width < min_width or box_height < min_height:
-            logger.warning(f"Skipping box that is too small.")
-            continue
-        if not include_original:
-            extracted_bounding_boxes.append((x1, y1, x2, y2))
-        else:
-            # this is a bit messy, but I'd like to have the original bbox without doing inference twice
-            extracted_bounding_boxes.append(((x1, y1, x2, y2), tuple(bbox.tolist())))
-
-    return extracted_bounding_boxes

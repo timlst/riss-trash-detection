@@ -60,11 +60,11 @@ parser.add_argument('--skip-evaluation',
                     help="Will skip evaluation on the testset and instead just plot PR curve."
                          "Requires coco_instances_results.json in output folder.")
 
-parser.add_argument('--skip-benchmark',
+parser.add_argument('--run-benchmark',
                     required=False,
                     default=False,
                     action='store_true',
-                    help="Will skip testing inference time on the testset.")
+                    help="Will test inference time on the testset.")
 
 parser.add_argument('-o', '--output',
                     required=False,
@@ -76,7 +76,7 @@ args = parser.parse_args()
 prev_dir = os.getcwd()
 os.makedirs(args.output, exist_ok=True)
 
-if not args.skip_evaluation or not args.skip_benchmark:
+if not args.skip_evaluation or args.run_benchmark:
     # only initialize model and load data if required by one of the two
     logger.debug("Loading test set.")
     register_coco_instances("test_data", {}, args.annotations, args.images)
@@ -86,7 +86,9 @@ if not args.skip_evaluation or not args.skip_benchmark:
     # its necessary to set threshhold to 0 for COCO to have the full spectrum available (otherwise a default of 0.05
     # is used)
     cfg = utils.get_config_from_path(args.config)
-    predictor, cfg = _build_detection_model(cfg, weights_path=args.weights_path, additional_options=["MODEL.ROI_HEADS.SCORE_THRESH_TEST", "0.0"])
+    predictor, cfg = _build_detection_model(
+        cfg, weights_path=args.weights_path, additional_options=["MODEL.ROI_HEADS.SCORE_THRESH_TEST", "0.0"]
+    )
     print(cfg)
     logger.debug("Model loaded.")
 
@@ -129,10 +131,11 @@ MAX_DETS = 2
 CATEGORY_ID = 0
 
 # ious = np.arange(0.5, 1, 0.05)
+
 ious = np.arange(0.5, 0.51, 0.05)
 
 # we are interested in boxes regardless of their size, so we choose index 0 for "all" boxes
-areas = [0, 3]
+areas = [0, 1, 2, 3, ]
 area_labels = ["all", "small", "medium", "large"]
 recall = np.arange(0, 1.01, 0.01)
 
@@ -180,7 +183,7 @@ def benchmark_inference_time(pred: DefaultPredictor, data, device):
     print(std_syn)
 
 
-if not args.skip_benchmark:
+if args.run_benchmark:
     print("Starting benchmark.")
     benchmark_inference_time(predictor, test_data_loader, device="cuda:0")
 

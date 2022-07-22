@@ -12,8 +12,6 @@ from detectron2.data.datasets import register_coco_instances
 from detectron2_backbone import backbone
 from detectron2_backbone.config import add_backbone_config
 
-# Setup detectron2 logger
-setup_logger(output="./output/", name="detectron2", abbrev_name="d2")
 
 class MyTrainer(DefaultTrainer):
     @classmethod
@@ -24,8 +22,12 @@ class MyTrainer(DefaultTrainer):
 
 
 cfg = get_cfg()
+
 os.makedirs(cfg.OUTPUT_DIR, exist_ok=True)
-cfg.merge_from_file("MOBILE_DETECTOR.yaml")
+cfg.merge_from_file("MOBILE_DETECTOR_PAPER2.yaml")
+
+# Setup detectron2 logger
+setup_logger(output=cfg.OUTPUT_DIR, name="detectron2", abbrev_name="d2")
 
 # dont care, we always train on GPU!
 cfg.MODEL.DEVICE = "cuda:0"

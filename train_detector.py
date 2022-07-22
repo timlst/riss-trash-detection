@@ -12,8 +12,6 @@ from detectron2.evaluation import COCOEvaluator, inference_on_dataset
 from detectron2.data import build_detection_test_loader
 from detectron2.data.datasets import register_coco_instances
 
-# Setup detectron2 logger
-setup_logger(output="./output/", name="detectron2", abbrev_name="d2")
 
 
 class MyTrainer(DefaultTrainer):
@@ -27,6 +25,9 @@ class MyTrainer(DefaultTrainer):
 cfg = get_cfg()
 os.makedirs(cfg.OUTPUT_DIR, exist_ok=True)
 cfg.merge_from_file("SERVER_DETECTOR.yaml")
+
+# Setup detectron2 logger
+setup_logger(output=cfg.OUTPUT_DIR, name="detectron2", abbrev_name="d2")
 
 # dont care, we always train on GPU!
 cfg.MODEL.DEVICE = "cuda:0"

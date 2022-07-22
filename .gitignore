@@ -9,4 +9,9 @@ output*/
 benchmark/
 benchmark_mobile/
 Waste_Bin_Detection_Dataset
-Waste_Bin_Multi-Class_Detection_Dataset
+Waste_Bin_Multi-Class_Detection_Dataset*
+paretos*
+pareto-*
+demo
+false_negatives
+various_images

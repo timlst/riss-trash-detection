@@ -49,9 +49,9 @@ parser.add_argument('-a', '--annotations',
 
 parser.add_argument('-p', '--predictions',
                     required=False,
-                    help='Filepath to predictions in COCO format. '
+                    help='Filepath to predictions in COCO format relative to output folder. '
                          'Will be generated in output folder by default, only makes sense with --skip-evaluation',
-                    default="./benchmark/coco_instances_results.json")
+                    default="./coco_instances_results.json")
 
 parser.add_argument('--skip-evaluation',
                     required=False,
@@ -59,6 +59,13 @@ parser.add_argument('--skip-evaluation',
                     action='store_true',
                     help="Will skip evaluation on the testset and instead just plot PR curve."
                          "Requires coco_instances_results.json in output folder.")
+
+parser.add_argument('--skip-plot',
+                    required=False,
+                    default=False,
+                    action='store_true',
+                    help="Will skip the plot"
+                    )
 
 parser.add_argument('--run-benchmark',
                     required=False,
@@ -86,6 +93,7 @@ if not args.skip_evaluation or args.run_benchmark:
     # its necessary to set threshhold to 0 for COCO to have the full spectrum available (otherwise a default of 0.05
     # is used)
     cfg = utils.get_config_from_path(args.config)
+    cfg.MODEL.DEVICE = "cuda:0" # sometimes you wanna speed things up
     predictor, cfg = _build_detection_model(
         cfg, weights_path=args.weights_path, additional_options=["MODEL.ROI_HEADS.SCORE_THRESH_TEST", "0.0"]
     )
@@ -107,6 +115,7 @@ logger.debug("Ground truth annotations loaded.")
 
 # load Detections in COCO format from file
 logger.debug("Loading detected bounding boxes.")
+os.chdir(args.output)
 if not os.path.exists(args.predictions):
     logger.critical("Predictions could not be found. Ending program.")
     sys.exit(1)
@@ -122,37 +131,52 @@ cocoEval.params.imgIds = cocoGt.getImgIds()
 cocoEval.evaluate()
 cocoEval.accumulate()
 
-precision = cocoEval.eval["precision"]
-recall = cocoEval.eval["recall"]
+if not args.skip_plot:
+    precision = cocoEval.eval["precision"]
 
-# we don't expect many detections per image, so might as well include the maximum of 100 (index for list [1, 10, 100])
-MAX_DETS = 2
-# we are class-agnostic and therefore have only one category anyways, so that one
-CATEGORY_ID = 0
 
-# ious = np.arange(0.5, 1, 0.05)
+    # we don't expect many detections per image, so might as well include the maximum of 100 (index for list [1, 10, 100])
+    MAX_DETS = 2
+    # we are class-agnostic and therefore have only one category anyways, so that one
+    CATEGORY_ID = 0
 
-ious = np.arange(0.5, 0.51, 0.05)
+    # ious = np.arange(0.5, 1, 0.05)
 
-# we are interested in boxes regardless of their size, so we choose index 0 for "all" boxes
-areas = [0, 1, 2, 3, ]
-area_labels = ["all", "small", "medium", "large"]
-recall = np.arange(0, 1.01, 0.01)
+    ious = np.arange(0.5, 0.51, 0.05)
 
-fig, ax = plt.subplots()
+    # we are interested in boxes regardless of their size, so we choose index 0 for "all" boxes
+    areas = [0, 3, ]
+    area_labels = ["all", "small", "medium", "large"]
+    recall = np.arange(0, 1.01, 0.01)
 
-for idx, iou in enumerate(ious):
-    for area_index in areas:
-        ax.plot(recall, precision[idx, :, CATEGORY_ID, area_index, MAX_DETS], label=f"IoU@{iou:.2f} for {area_labels[area_index]} areas")
+    fig, ax = plt.subplots()
 
-ax.legend()
-ax.set_xlabel("Recall")
-ax.set_ylabel("Precision")
-ax.grid(alpha=0.5)
+    for idx, iou in enumerate(ious):
+        for area_index in areas:
+            ax.plot(recall, precision[idx, :, CATEGORY_ID, area_index, MAX_DETS], label=f"IoU@{iou:.2f} for {area_labels[area_index]} areas")
+    for line in ax.lines:
+        print(line.get_label())
+        print(line.get_xdata(), line.get_ydata())
 
-ax.set_title("PR Curve")
+    ax.legend()
+    ax.set_xlabel("Recall")
+    ax.set_ylabel("Precision")
+    ax.grid(alpha=0.5)
 
-plt.show()
+    ax.set_title("PR Curve")
+
+    plt.show()
+
+# HIGHLIGHT FALSE NEGATIVES
+# we are interested in IoU50 as always
+
+uniques = set()
+for img in cocoEval.evalImgs:
+    if 0 in img["gtMatches"][0]:
+        c = np.count_nonzero(img["gtMatches"][0] == 0)
+        uniques.add((img["image_id"], f"{c} Ground truths with no DT match"))
+for image_id, s in uniques:
+    print(s, cocoGt.imgs.get(image_id)["file_name"])
 
 
 # Benchmark Inference time o

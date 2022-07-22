@@ -35,10 +35,10 @@ data_transforms = {
 batch_size = 4
 
 datasets = {
-    "train": ImageFolder("./Waste_Bin_Multi-Class_Detection_Dataset/combined/train/", transform=data_transforms["train"]),
-    "val": ImageFolder("./Waste_Bin_Multi-Class_Detection_Dataset/combined/validation/",
+    "train": ImageFolder("./Waste_Bin_Multi-Class_Detection_Dataset_fixed_medium_upwards/combined/train/", transform=data_transforms["train"]),
+    "val": ImageFolder("./Waste_Bin_Multi-Class_Detection_Dataset_fixed_medium_upwards/combined/validation/",
                        transform=data_transforms["val"]),
-    "test": ImageFolder("./Waste_Bin_Multi-Class_Detection_Dataset/combined/test/", transform=data_transforms["test"]),
+    "test": ImageFolder("./Waste_Bin_Multi-Class_Detection_Dataset_fixed_medium_upwards/combined/test/", transform=data_transforms["test"]),
 }
 
 for lbl, folder in datasets.items():
@@ -160,7 +160,7 @@ def train_model(model, criterion, optimizer, scheduler, num_epochs=25, device='c
             if phase == 'val' and epoch_acc > best_acc:
                 best_acc = epoch_acc
                 best_model_wts = copy.deepcopy(model.state_dict())
-                torch.save(model, f"output/classifier_{epoch}.pth")
+                torch.save(model, f"output/classifier_medium_{epoch}.pth")
 
         print()
 
@@ -174,9 +174,9 @@ def train_model(model, criterion, optimizer, scheduler, num_epochs=25, device='c
     return model
 
 
-new_model = train_model(model_fe, criterion, optimizer_ft, exp_lr_scheduler, num_epochs=20, device=device)
+new_model = train_model(model_fe, criterion, optimizer_ft, exp_lr_scheduler, num_epochs=25, device=device)
 new_model.train()
-torch.save(new_model, "output/classifier_final.pth")
+torch.save(new_model, "output/classifier_medium_final.pth")
 
 correct = 0
 total = 0

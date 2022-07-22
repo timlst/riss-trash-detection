@@ -73,7 +73,7 @@ def _classify(classifier, image_tensor, class_names, minimal_confidence=0.0):
     :param classifier: classification model to apply
     :param image_tensor: tensor of input image
     :param minimal_confidence: minimal required confidence for a prediction, otherwise class id will be None
-    :return: tuple of class name and confidence, class id may be "Ambiguous" if the confidence is below minimal_confidence
+    :return: tuple of class name and confidence, class id may be "Unsure" if the confidence is below minimal_confidence
     """
 
     predicted_class_id, confidence_ = _extract_prediction(_predict_probabilities(classifier, image_tensor))
@@ -81,7 +81,7 @@ def _classify(classifier, image_tensor, class_names, minimal_confidence=0.0):
     confidence_ = confidence_.data[0]
 
     if confidence_ < minimal_confidence:
-        return None, confidence_
+        return "Unsure", confidence_
 
     return class_names[predicted_class_id], confidence_
 

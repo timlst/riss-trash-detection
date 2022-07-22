@@ -64,7 +64,7 @@ if __name__ == "__main__":
 
         for idx, c in enumerate(cutouts):
             class_name, confidence = _classify(
-                classifier, _image_to_normalized_tensor(c), class_names, minimal_confidence=0.5
+                classifier, _image_to_normalized_tensor(c), class_names, minimal_confidence=0.95
             )
 
             outfile = args.output_mask.format(filename=filename, extension=extension[1:], index=idx, class_name=class_name)

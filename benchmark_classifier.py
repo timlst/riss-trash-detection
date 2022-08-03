@@ -1,18 +1,16 @@
+"""
+A script that generates a number of metrics for a classification model and an assiociated test dataset in folder format
+(i.e. dir/<ground truth label>/<instance of that label>.png)
+"""
 import argparse
 import math
 import os
-import sys
 
 import numpy as np
-import pandas as pd
-import sklearn.metrics
 import torch
 import seaborn as sns
-import torchvision
-from PIL import Image
 from matplotlib import pyplot as plt
 from sklearn.metrics import confusion_matrix, precision_recall_fscore_support, balanced_accuracy_score
-from sklearn.metrics import precision_recall_curve
 
 from torchvision import transforms
 from torchvision.datasets import ImageFolder
@@ -41,16 +39,18 @@ parser.add_argument('-o', '--output',
 
 args = parser.parse_args()
 
+# create output dir and go back to previous dir at the end
 prev_dir = os.getcwd()
 os.makedirs(args.output, exist_ok=True)
 
-# Set up loading of images
+# Set up loading of images and apply some resizing/normalizing
 transform = transforms.Compose([
     transforms.Resize(224),
     transforms.CenterCrop(224),
     transforms.ToTensor(),
     transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])])
 
+# GPU is fast, so use it if we can
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 folder = ImageFolder(args.input, transform=transform)
@@ -58,10 +58,15 @@ dataset_loader = torch.utils.data.DataLoader(folder, batch_size=16, shuffle=True
 
 class_names = ["Empty", "Full", "Garbage Bag", ]
 
-CHOSEN_THRESHOLD = 0.85
+CHOSEN_THRESHOLD = 0.87
 
 
 def imshow(img, title=None):
+    """
+    Show image to the user
+    :param img: PIL img in BGR
+    :param title: the title that should be shown for the window
+    """
     img = img / 2 + 0.5  # unnormalize
     npimg = img.numpy()
     plt.imshow(np.transpose(npimg, (1, 2, 0)))
@@ -69,6 +74,11 @@ def imshow(img, title=None):
         plt.title(title)
     plt.show()
 
+
+########################################################################################################################
+# UTILITY METHODS
+# take predictions and manipulate them as if a human operator intervened depending on a threshold
+########################################################################################################################
 
 def apply_confidence_threshold(predictions, confidences, threshold, unsure_symbol=3):
     """
@@ -101,9 +111,10 @@ def apply_intervention(truths, predictions, confidences, threshold):
 model = torch.load(args.model_path)
 model.eval()
 
-########################
-# TEST SET PREDICTIONS #
-########################
+########################################################################################################################
+# TEST SET PREDICTIONS
+# saves model predictions for all images in the test set
+########################################################################################################################
 y_inputs = []
 y_confidence = []
 y_pred = []
@@ -132,9 +143,10 @@ predictions_unsure = apply_confidence_threshold(y_pred, y_confidence, CHOSEN_THR
 predictions_after_intervention, human_count = apply_intervention(y_true, y_pred, y_confidence, CHOSEN_THRESHOLD)
 
 
-########################
+########################################################################################################################
 # SHOW FALSE PREDICTIONS
-########################
+# shows all images where the prediction wasn't correct to a human user
+########################################################################################################################
 
 def plot_images_with_labels(images, labels):
     """
@@ -157,7 +169,6 @@ if args.show_failures:
     for idx, (output, truth) in enumerate(zip(y_pred, y_true)):
         if output != truth:
             mismatches.append((y_inputs[idx], output, truth))
-            print(class_names[truth])
 
     plot_images_with_labels(
         # unnormalize images
@@ -165,9 +176,10 @@ if args.show_failures:
         labels=[f"T:{class_names[truth]}|P:{class_names[output]}" for _, output, truth in mismatches]
     )
 
-####################
+########################################################################################################################
 # CONFUSION MATRICES
-####################
+# generate two confusion matrices: One of the original model and one with "unsure" when under CHOSEN_THRESHOLD
+########################################################################################################################
 os.chdir(args.output)
 
 fig1, ax1, = plt.subplots()
@@ -175,7 +187,7 @@ fig2, ax2, = plt.subplots()
 sns.set(font="Tahoma")
 sns.set(font_scale=1.2)
 font = {
-    "family" : "Tahoma",
+    "family": "Tahoma",
     "size": 16,
 }
 plt.rc("font", **font)
@@ -187,14 +199,14 @@ cf_matrix_normalized = cf_matrix.astype('float') / cf_matrix.sum(axis=1)[:, np.n
 
 sns.heatmap(cf_matrix_normalized, annot=True, fmt='.2f',
             xticklabels=class_names, yticklabels=class_names,
-            cmap=sns.light_palette("#388294", as_cmap=True), ax=ax1)
+            cmap=sns.light_palette("#b3112c", as_cmap=True), ax=ax1)
+# cmap = sns.light_palette("#388294", as_cmap=True)
 ax1.set_title(f'Confusion matrix')
 ax1.set_ylabel('Ground Truth')
 ax1.set_xlabel('Prediction')
 
 # save in output dir
 fig1.savefig(f'confusion_matrix_original.png', transparent=True)
-
 
 # Build confusion matrix under threshold
 cf_matrix = confusion_matrix(y_true, predictions_unsure)
@@ -205,7 +217,8 @@ cf_matrix_normalized_classes_only = np.delete(cf_matrix_normalized, (-1), axis=0
 
 sns.heatmap(cf_matrix_normalized_classes_only, annot=True, fmt='.2f',
             xticklabels=class_names + ["Unsure", ], yticklabels=class_names,
-            cmap=sns.light_palette("#388294", as_cmap=True), ax=ax2)
+            cmap=sns.light_palette("#b3112c", as_cmap=True), ax=ax2)
+# old color: #388294
 ax2.set_title(f'Confusion matrix for confidence threshold {CHOSEN_THRESHOLD}')
 ax2.set_ylabel('Ground Truth')
 ax2.set_xlabel('Prediction')
@@ -215,9 +228,10 @@ fig2.savefig(f'confusion_matrix_{CHOSEN_THRESHOLD}.png', transparent=True)
 
 os.chdir(prev_dir)
 
-#####################
-# BALANCED ACCURACY #
-#####################
+########################################################################################################################
+# BALANCED ACCURACY
+# calculates the balanced accuracy score with and without human intervention for comparability across class imbalance
+########################################################################################################################
 balanced_accuracy = balanced_accuracy_score(y_true, y_pred)
 print(f"Balanced accuracy score: {balanced_accuracy}")
 
@@ -250,11 +264,10 @@ print(f"Human intervention required for {human_count} images")
 ###################################################################
 # "Full" false negative rate at different confidence thresholds
 ###################################################################
-print("t,full_fn_rate")
-for t in np.arange(0, 1.1, 0.005):
-    predictions_at_intervention, human_inspections = apply_intervention(y_true, y_pred, y_confidence, threshold=t)
-    print(predictions_at_intervention)
-    fn_rate = predictions_at_intervention.count(1) / y_true.count(1)
-    print(f"{t:.4f},{fn_rate:.4f}")
+# print("t,full_fn_rate")
+# for t in np.arange(0, 1.1, 0.005):
+#    predictions_at_intervention, human_inspections = apply_intervention(y_true, y_pred, y_confidence, threshold=t)
+#    fn_rate = predictions_at_intervention.count(1) / y_true.count(1)
+#    print(f"{t:.4f},{fn_rate:.4f}")
 
 os.chdir(prev_dir)

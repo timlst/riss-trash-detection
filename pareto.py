@@ -1,3 +1,7 @@
+"""
+Script that benchmarks the Speed-Accuracy-Tradeoff for a detection by tweaking the Resize that is being applied.
+Didn't actually make it into the final paper, so use at your own risk.
+"""
 import argparse
 import json
 import logging

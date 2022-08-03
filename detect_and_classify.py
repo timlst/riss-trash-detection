@@ -1,10 +1,15 @@
+"""
+Wraps detection and classification into one executable script.
+"""
 import pathlib
+import warnings
 
+import argparse
+from PIL import Image
 from tqdm import tqdm
 
 import utils
 from bounding_box_extractor import _build_detection_model, extract_predictions_from_image
-from classifier import *
 from classifier import _build_classification_model, _classify, _image_to_normalized_tensor
 
 if __name__ == "__main__":

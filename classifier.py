@@ -1,3 +1,7 @@
+"""
+This script loads a classification model, takes an image and gives it a classification (with probabilities if desired)
+It also provides the functionality to do classification as a library
+"""
 import argparse
 
 import torch

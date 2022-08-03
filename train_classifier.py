@@ -1,3 +1,6 @@
+"""
+Pretty standard classification training script.
+"""
 import copy
 import time
 
@@ -32,6 +35,7 @@ data_transforms = {
     ]),
 }
 
+# Load our data sets
 batch_size = 4
 
 datasets = {
@@ -178,6 +182,9 @@ new_model = train_model(model_fe, criterion, optimizer_ft, exp_lr_scheduler, num
 new_model.train()
 torch.save(new_model, "output/classifier_medium_final.pth")
 
+"""
+Run classification on test dataset once to get accuracy
+"""
 correct = 0
 total = 0
 # since we're not training, we don't need to calculate the gradients for our outputs

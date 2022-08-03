@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+"""
+Pretty standard training script for detection model. Compare to train_detector.py, just loads a different config
+"""
 import os
 from detectron2 import model_zoo
 from detectron2.config import get_cfg, LazyConfig
@@ -9,11 +12,17 @@ from detectron2.utils.logger import setup_logger
 from detectron2.evaluation import COCOEvaluator, inference_on_dataset
 from detectron2.data import build_detection_test_loader
 from detectron2.data.datasets import register_coco_instances
+
+# in case we want to use RESNET18 or some other non-default backbones
+# reguires this: https://github.com/sxhxliang/detectron2_backbone
 from detectron2_backbone import backbone
 from detectron2_backbone.config import add_backbone_config
 
 
 class MyTrainer(DefaultTrainer):
+    """
+    Trainer that just uses COCOEvaluator every EVAL_ITER (?) iterations
+    """
     @classmethod
     def build_evaluator(cls, cfg, dataset_name, output_folder=None):
         if output_folder is None:
@@ -29,7 +38,7 @@ cfg.merge_from_file("MOBILE_DETECTOR_PAPER2.yaml")
 # Setup detectron2 logger
 setup_logger(output=cfg.OUTPUT_DIR, name="detectron2", abbrev_name="d2")
 
-# dont care, we always train on GPU!
+# don't care, we always train on GPU!
 cfg.MODEL.DEVICE = "cuda:0"
 
 WORKING_FOLDER = "./Waste_Bin_Detection_Dataset/combined/"
@@ -85,6 +94,9 @@ trainer.train()
 
 print(f"{delim}\nStarting test set evaluation.\n{delim}")
 
+"""
+Do one evaluation on the test dataset and get COCO metrics
+"""
 predictor = DefaultPredictor(cfg)
 
 evaluator = COCOEvaluator("combined_test", output_dir=cfg.OUTPUT_DIR)

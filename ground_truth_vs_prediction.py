@@ -1,3 +1,6 @@
+"""
+Script to visualize/output predictions of a detection model versus the ground truth.
+"""
 import argparse
 import os
 

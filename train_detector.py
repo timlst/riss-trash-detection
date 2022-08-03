@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
+"""
+Pretty standard training script for training a detection model
+"""
 import os
-import sys
 
-from detectron2 import model_zoo
 from detectron2.config import get_cfg
-from detectron2.data import MetadataCatalog, DatasetCatalog
 from detectron2.engine import DefaultPredictor
 from detectron2.engine import DefaultTrainer
 from detectron2.utils.logger import setup_logger
@@ -15,6 +15,9 @@ from detectron2.data.datasets import register_coco_instances
 
 
 class MyTrainer(DefaultTrainer):
+    """
+    Trainer that just uses COCOEvaluator every EVAL_ITER (?) iterations
+    """
     @classmethod
     def build_evaluator(cls, cfg, dataset_name, output_folder=None):
         if output_folder is None:
@@ -23,7 +26,11 @@ class MyTrainer(DefaultTrainer):
 
 
 cfg = get_cfg()
+
+# make output dir
 os.makedirs(cfg.OUTPUT_DIR, exist_ok=True)
+
+# get appropriate config file
 cfg.merge_from_file("SERVER_DETECTOR.yaml")
 
 # Setup detectron2 logger
@@ -32,6 +39,7 @@ setup_logger(output=cfg.OUTPUT_DIR, name="detectron2", abbrev_name="d2")
 # dont care, we always train on GPU!
 cfg.MODEL.DEVICE = "cuda:0"
 
+# these are our data sets
 WORKING_FOLDER = "./Waste_Bin_Detection_Dataset/combined/"
 register_coco_instances("combined_train", {}, f"{WORKING_FOLDER}combined_dataset_train.json", WORKING_FOLDER)
 register_coco_instances("combined_validation", {}, f"{WORKING_FOLDER}combined_dataset_validation.json", WORKING_FOLDER)
@@ -89,29 +97,13 @@ print("*" * 10)
 print("Starting test set evaluation.")
 print("*" * 10)
 
+
+"""
+Do one evaluation on the test dataset at a threshold of 75% and get COCO metrics
+"""
 cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.75  # set a custom testing threshold
 predictor = DefaultPredictor(cfg)
 
 evaluator = COCOEvaluator("combined_test", output_dir=cfg.OUTPUT_DIR)
 test_data_loader = build_detection_test_loader(cfg, "combined_test")
 print(inference_on_dataset(predictor.model, test_data_loader, evaluator))
-
-# test_dataset_dicts = DatasetCatalog.get("combined_test")
-# metadata = MetadataCatalog.get("combined_test")
-#
-# def show_image_to_user(window_name, im):
-#    cv2.imshow(window_name, im)
-#    cv2.waitKey(0)
-#    cv2.destroyAllWindows()
-# for d in test_dataset_dicts:
-#    im = cv2.imread(d["file_name"])
-#    outputs = predictor(im)
-#    v = Visualizer(im[:, :, ::-1],
-#                   metadata=metadata,
-#                   scale=1,
-#                   instance_mode=ColorMode.IMAGE
-#                   )
-#    out = v.draw_instance_predictions(outputs["instances"].to("cpu"))
-#    show_image_to_user("prediction", out.get_image()[:, :, ::-1])
-#
-# print("Inference done")

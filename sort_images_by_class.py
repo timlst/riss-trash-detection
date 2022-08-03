@@ -1,7 +1,10 @@
+"""
+Script that was used to produce the classification dataset from the annotations left by Elias.
+Use at your own risk, this was never touched again afterwards
+"""
 import argparse
 import json
 import os
-import sys
 
 import cv2
 
@@ -18,7 +21,6 @@ args = parser.parse_args()
 
 HORIZONTAL_SCALE = 1.5
 VERTICAL_SCALE = 1.2
-
 
 def bboxes_intersect(box1, box2):
     """

@@ -1,7 +1,8 @@
-"""Detection model
+"""
+Detection model
 
 Provides all necessary utility to load a detection model from config/weights and then use it to extract bounding boxes,
-that are scaled to include the surroundings.
+that are scaled to include the surroundings by providing a Predictor that can wrap a loaded model.
 """
 import logging
 
@@ -13,9 +14,10 @@ from detectron2.data import MetadataCatalog
 from detectron2.modeling import build_model
 import detectron2.data.transforms as T
 from detectron2.structures import Boxes
-from detectron2_backbone import backbone  # to allow custom backbones in cfg file
+# to allow custom backbones in cfg file from here https://github.com/sxhxliang/detectron2_backbone
+from detectron2_backbone import backbone
 
-# we dont want detectron2 loading logs
+# we don't want Detectron2 loading logs
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("detector")
 
